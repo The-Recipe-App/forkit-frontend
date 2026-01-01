@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import { AlignJustify } from "lucide-react";
 import Logo from "../features/Logo";
+import { set } from "date-fns";
 
-const TopBar = ({ isAuthorized, windowWidth, footerVisible, setSidebarMode }) => {
+const TopBar = ({ isAuthorized, windowWidth, footerVisible, setSidebarMode, setWantsToLogIn }) => {
     const location = useLocation();
     const [mobileOpen, setMobileOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -200,6 +201,7 @@ const ProfileButton = ({ isAuthorized }) => {
                 transition-colors
             "
             title="Login"
+            onClick={() => window.location.href = '/login'}
         >
             <User size={20} />
             <span className="text-sm">Login</span>

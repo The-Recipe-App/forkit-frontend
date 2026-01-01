@@ -90,9 +90,15 @@ const MainAppLayout = () => {
                     <>
                         {/* Top Bar */}
                         {/* TopBar spacer – prevents layout shift */}
-<div style={{ height: TOPBAR_HEIGHT }} />
-
-                        <TopBar toggleBtnRef={toggleBtnRef} isAuthorized={isAuthorized} windowWidth={windowWidth} footerVisible={footerVisible && shouldExitAnimation} setSidebarMode={setNavOpen} />
+                        {shouldExitAnimation && <div style={{ height: TOPBAR_HEIGHT }} />}
+                        <TopBar
+                            toggleBtnRef={toggleBtnRef}
+                            isAuthorized={isAuthorized}
+                            windowWidth={windowWidth}
+                            footerVisible={footerVisible && shouldExitAnimation} 
+                            setSidebarMode={setNavOpen} 
+                            setWantsToLogIn={setWantsToLogIn}
+                        />
 
                         {/* Main Content Area */}
                         <div className="flex flex-1 relative">

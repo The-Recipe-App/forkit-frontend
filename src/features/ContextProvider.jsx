@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 const AppContext = createContext();
 
@@ -8,6 +9,7 @@ export const ContextProvider = ({ children }) => {
     const [role, setRole] = useState(null);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [wantsToLogIn, setWantsToLogIn] = useState(false);
+    const location = useLocation();
     const[isNavOpen, setIsNavOpen] = useState(() => (typeof window !== "undefined" ? windowWidth > 1024 : true));
     useEffect(() => {
         const timer = setTimeout(() => setIsLoading(false), 8000);
@@ -19,6 +21,14 @@ export const ContextProvider = ({ children }) => {
     // useEffect(() => {
     //     document.title = pageTitle;
     // }, [pageTitle]);
+
+    useEffect(() => {
+        if (location.pathname === "/login") {
+            setWantsToLogIn(true);
+        } else {
+            setWantsToLogIn(false);
+        }
+    }, [location]);
 
     useEffect(() => {
         const handleResize = () => {

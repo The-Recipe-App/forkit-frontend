@@ -6,11 +6,15 @@ import store from "./store";
 import Home from "./pages/Home";
 import MainAppLayout from "./layouts/MainAppLayout";
 import { ContextProvider  } from "./features/ContextProvider";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 
 function App() {
   const publicRoutes = [
     { index: true, path: "/", element: <Home /> },
+    { path: "/privacy", element: <Privacy /> },
+    { path: "/terms", element: <Terms /> },
   ];
 
 

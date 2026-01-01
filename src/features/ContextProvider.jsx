@@ -7,7 +7,7 @@ export const ContextProvider = ({ children }) => {
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [role, setRole] = useState(null);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-    const [wantsToLogIn, setWantsToLogIn] = useState(true);
+    const [wantsToLogIn, setWantsToLogIn] = useState(false);
     const[isNavOpen, setIsNavOpen] = useState(() => (typeof window !== "undefined" ? windowWidth > 1024 : true));
     useEffect(() => {
         const timer = setTimeout(() => setIsLoading(false), 8000);

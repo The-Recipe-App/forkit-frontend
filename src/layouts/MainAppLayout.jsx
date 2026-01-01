@@ -25,6 +25,8 @@ const MainAppLayout = () => {
     const navRef = useRef(null);
     const toggleBtnRef = useRef(null);
 
+    const TOPBAR_HEIGHT = "3.875rem";
+
     useEffect(() => {
         let observer;
         let sentinel;
@@ -87,6 +89,9 @@ const MainAppLayout = () => {
                 : (
                     <>
                         {/* Top Bar */}
+                        {/* TopBar spacer – prevents layout shift */}
+<div style={{ height: TOPBAR_HEIGHT }} />
+
                         <TopBar toggleBtnRef={toggleBtnRef} isAuthorized={isAuthorized} windowWidth={windowWidth} footerVisible={footerVisible && shouldExitAnimation} setSidebarMode={setNavOpen} />
 
                         {/* Main Content Area */}

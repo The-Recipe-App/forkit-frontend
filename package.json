@@ -11,6 +11,7 @@
     "tw:init": "tailwindcss init -p"
   },
   "dependencies": {
+    "@auth0/auth0-spa-js": "^2.11.0",
     "@headlessui/react": "^2.2.2",
     "@jitsi/react-sdk": "^1.4.4",
     "@reduxjs/toolkit": "^2.1.0",

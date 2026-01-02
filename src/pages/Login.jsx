@@ -1,13 +1,17 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import Logo from "../features/Logo";
-import { useGoogleAuth } from "../features/auth/useGoogleAuth";
+import { useAuth } from "../features/auth/useAuth";
+import {loginWithPassword, getCurrentUser} from "../features/auth/authApi";
+import { useNavigate } from "react-router-dom";
 
-function Login({ setWantsToLogIn }) {
+function Login({ setIsAuthorized, setIsLoading }) {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
-    const [googleLoading, setGoogleLoading] = useState(false);
     const [error, setError] = useState("");
+    const navigate = useNavigate();
+
+    const { login } = useAuth();
 
     /* ─────────────────────────
        Email / Password Login
@@ -16,67 +20,29 @@ function Login({ setWantsToLogIn }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
+        setIsLoading(true);
         setLoading(true);
-
+    
         try {
-            // TODO: replace with real API call
-            // await login(email, password);
-
-            setWantsToLogIn(false);
+            // ✅ correct function
+            await loginWithPassword(email, password);
+    
+            // ✅ verify session from backend
+            const me = await getCurrentUser();
+            if (!me) {
+                throw new Error("Session verification failed");
+            }
+    
+            setIsAuthorized(true);
+            navigate("/");
         } catch (err) {
-            setError("Login failed. Please try again.");
+            setError(err.message || "Invalid email or password.");
         } finally {
+            setIsLoading(false);
             setLoading(false);
         }
     };
-
-    /* ─────────────────────────
-       Google OAuth Success
-    ───────────────────────── */
-
-    const handleGoogleSuccess = useCallback(async (response) => {
-        if (!response?.credential) {
-            setError("Google authentication failed.");
-            setGoogleLoading(false);
-            return;
-        }
-
-        try {
-            const res = await fetch("/api/auth/google", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id_token: response.credential }),
-                credentials: "include",
-            });
-
-            if (!res.ok) {
-                throw new Error("Backend rejected Google login");
-            }
-
-            // TODO: update auth context here
-            setWantsToLogIn(false);
-        } catch (err) {
-            console.error(err);
-            setError("Google login failed. Please try again.");
-        } finally {
-            setGoogleLoading(false);
-        }
-    }, [setWantsToLogIn]);
-
-    /* ─────────────────────────
-       Google OAuth Init
-    ───────────────────────── */
-
-    const { prompt } = useGoogleAuth({
-        onSuccess: handleGoogleSuccess,
-    });
-
-    const handleGoogleClick = () => {
-        if (googleLoading) return;
-        setError("");
-        setGoogleLoading(true);
-        prompt();
-    };
+    
 
     /* ─────────────────────────
        Render
@@ -103,7 +69,7 @@ function Login({ setWantsToLogIn }) {
                     Welcome back to Forkit
                 </h1>
                 <p className="text-sm text-gray-400 text-center mt-1">
-                    Cook. Share. Evolve — together.
+                    Log in to continue evolving recipes together.
                 </p>
 
                 {/* Error */}
@@ -113,31 +79,7 @@ function Login({ setWantsToLogIn }) {
                     </div>
                 )}
 
-                {/* Google OAuth */}
-                <button
-                    onClick={handleGoogleClick}
-                    disabled={googleLoading}
-                    className="
-                        mt-6 w-full
-                        flex items-center justify-center gap-3
-                        py-2.5 rounded-lg
-                        bg-neutral-800 hover:bg-neutral-700
-                        text-white
-                        transition
-                        disabled:opacity-50
-                    "
-                >
-                    {googleLoading ? "Connecting to Google…" : "Continue with Google"}
-                </button>
-
-                <div className="flex items-center gap-3 my-6 text-gray-500 text-sm">
-                    <div className="flex-1 h-px bg-gray-700" />
-                    or
-                    <div className="flex-1 h-px bg-gray-700" />
-                </div>
-
-                {/* Email / Password Form */}
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4 mt-6">
                     <input
                         type="email"
                         placeholder="Email"
@@ -190,10 +132,9 @@ function Login({ setWantsToLogIn }) {
                     </button>
                 </form>
 
-                {/* Footer */}
                 <div className="mt-6 text-sm text-center text-gray-400">
                     New to Forkit?{" "}
-                    <a href="/signup" className="text-orange-400 hover:underline">
+                    <a href="/register" className="text-orange-400 hover:underline">
                         Create an account
                     </a>
                 </div>

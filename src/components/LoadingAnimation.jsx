@@ -56,7 +56,7 @@ export default function LoadingScreen({ isLoading, shouldExit, setShouldExit }) 
         if (!isLoading) {
             const t = setTimeout(() => {
                 setShouldExit(true);
-            }, 1000);
+            }, 2500);
     
             return () => clearTimeout(t);
         }

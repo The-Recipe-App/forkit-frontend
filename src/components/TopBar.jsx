@@ -6,16 +6,23 @@ import {
     PlusCircle,
     Heart,
     Bell,
-    User
+    User,
+    Lock,
+    Book,
+    LogOut
 } from "lucide-react";
 import { AlignJustify } from "lucide-react";
 import Logo from "../features/Logo";
 import { set } from "date-fns";
+import backendUrlV1 from "../urls/backendUrl";
+import { logout } from "../features/auth/authApi";
 
-const TopBar = ({ isAuthorized, windowWidth, footerVisible, setSidebarMode, setWantsToLogIn }) => {
+
+const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, setSidebarMode, setWantsToLogIn }) => {
     const location = useLocation();
     const [mobileOpen, setMobileOpen] = useState(false);
     const dropdownRef = useRef(null);
+    const [avatarUrl, setAvatarUrl] = useState(null);
 
     /* Close dropdown on outside click */
     useEffect(() => {
@@ -28,12 +35,45 @@ const TopBar = ({ isAuthorized, windowWidth, footerVisible, setSidebarMode, setW
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
+    useEffect(() => {
+        const handler = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+                setMobileOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    /* Fetch current user (cookie-based auth) */
+    useEffect(() => {
+        if (!isAuthorized) {
+            setAvatarUrl(null);
+            return;
+        }
+
+        fetch(`${backendUrlV1}auth/me`, {
+            credentials: "include",
+        })
+            .then((res) => {
+                if (!res.ok) throw new Error("Not authenticated");
+                return res.json();
+            }) 
+            .then((data) => {
+                console.log(data.avatar_url);
+                setAvatarUrl(data?.avatar_url);
+            })
+            .catch(() => {
+                setAvatarUrl(null);
+            });
+    }, [isAuthorized]);
+
     return (
         <header
             className={`
                 border-b fixed w-full border-gray-700
                 bg-[#393939] bg-opacity-[31%] text-white
-                px-4 py-2 shadow-lg z-50
+                px-4 py-2 shadow-lg z-50 min-h-[62px]
                 ${footerVisible ? "relative" : "fixed top-0"}
             `}
         >
@@ -45,8 +85,8 @@ const TopBar = ({ isAuthorized, windowWidth, footerVisible, setSidebarMode, setW
                     onDragStart={(e) => e.preventDefault()}
                 >
                     <button
-                            onClick={() => setSidebarMode(o => !o)}
-                            className="
+                        onClick={() => setSidebarMode(o => !o)}
+                        className="
                         flex items-center justify-center
                         w-10 h-10 rounded-md
                         border border-gray-600
@@ -54,11 +94,11 @@ const TopBar = ({ isAuthorized, windowWidth, footerVisible, setSidebarMode, setW
                         hover:bg-gray-700
                                 transition-colors
                                 "
-                            title="Toggle sidebar (Ctrl+B)"
-                        >
-                            ☰
-                        </button>
-                    
+                        title="Toggle sidebar (Ctrl+B)"
+                    >
+                        ☰
+                    </button>
+
                     <Logo width={120} />
                 </div>
                 {/* CENTER: Desktop Main Actions */}
@@ -105,7 +145,7 @@ const TopBar = ({ isAuthorized, windowWidth, footerVisible, setSidebarMode, setW
 
                     <div className="flex items-center gap-4">
                         {isAuthorized && <IconButton icon={Bell} />}
-                        <ProfileButton isAuthorized={isAuthorized} />
+                        <ProfileButton isAuthorized={isAuthorized} avatarUrl={avatarUrl} />
                     </div>
                     {/* CENTER: Mobile Dropdown */}
                     {!isAuthorized && windowWidth <= 1024 && (
@@ -181,30 +221,107 @@ const DropdownItem = ({ icon: Icon, label }) => (
     </button>
 );
 
-const ProfileButton = ({ isAuthorized }) => {
-    return isAuthorized ? (
-        <button
-            className="
-                w-9 h-9 flex items-center justify-center
-                rounded-full bg-gray-700
-                hover:bg-gray-600 transition-colors
-            "
-            title="Profile"
-        >
-            <User size={18} />
-        </button>
-    ) : (
-        <button
-            className="
-                flex items-center gap-1
-                text-gray-300 hover:text-white
-                transition-colors
-            "
-            title="Login"
-            onClick={() => window.location.href = '/login'}
-        >
-            <User size={20} />
-            <span className="text-sm">Login</span>
-        </button>
+const ProfileButton = ({ isAuthorized, avatarUrl, onLogout }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    // Close on outside click
+    useEffect(() => {
+        const handler = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    if (!isAuthorized) {
+        return (
+            <div className="flex items-center gap-2">
+                <button
+                    className="flex items-center gap-1 text-gray-300 hover:text-white transition"
+                    onClick={() => (window.location.href = "/login")}
+                >
+                    <User size={20} />
+                    <span className="text-sm">Login</span>
+                </button>
+                <button
+                    className="flex items-center gap-1 text-gray-300 hover:text-white transition"
+                    onClick={() => (window.location.href = "/register")}
+                >
+                    <Book size={20} />
+                    <span className="text-sm">Register</span>
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div ref={ref} className="relative">
+            {/* Avatar button */}
+            <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setOpen((o) => !o)}
+                className="
+                    w-10 h-10 rounded-full cursor-pointer
+                    overflow-hidden flex items-center justify-center
+                    bg-gray-700 hover:ring-2 hover:ring-orange-500
+                    transition
+                "
+            >
+                {avatarUrl ? (
+                    <img
+                        src={avatarUrl}
+                        alt="Profile avatar"
+                        className="w-full h-full object-cover pointer-events-none"
+                        draggable={false}
+                    />
+                ) : (
+                    <User size={18} className="text-gray-300" />
+                )}
+            </div>
+
+            {/* Dropdown */}
+            {open && (
+                <div
+                    className="
+                        absolute right-0 mt-2 w-40
+                        bg-gray-900 border border-gray-700
+                        rounded-lg shadow-lg z-50
+                        overflow-hidden
+                    "
+                >
+                    <button
+                        className="
+                            w-full px-4 py-2 text-left text-sm
+                            text-gray-200 hover:bg-gray-800
+                            transition
+                        "
+                        onClick={() => {
+                            setOpen(false);
+                        }}
+                    >
+                        Profile
+                    </button>
+
+                    <button
+                        className="
+                            w-full px-4 py-2 text-left text-sm
+                            text-red-400 hover:bg-gray-800
+                            transition flex items-center gap-2
+                        "
+                        onClick={() => {
+                            setOpen(false);
+                            logout();
+                        }}
+                    >
+                        <LogOut size={14} />
+                        Logout
+                    </button>
+                </div>
+            )}
+        </div>
     );
 };

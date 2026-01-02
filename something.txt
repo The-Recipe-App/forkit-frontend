@@ -1,0 +1,9 @@
+Great! A new OAuth 2.0 client was created for you along with a user account. You can see the registration info below. This information is stored in a cookie in your browser. Save the user login and password, since you'll need those in order to authenticate as that user during the OAuth flow!
+
+Client Registration
+client_id	h3PP4b7n7Mt7eBQ1hNBP-LXB
+client_secret	_-QS4HGVQMOOKJ2E4iEyGOr_S1nyqE42pH62dDgLqltt_AHP
+User Account
+login	helpful-orangutan@example.com
+password	Angry-Tamarin-51
+open in new window

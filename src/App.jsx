@@ -9,11 +9,13 @@ import { ContextProvider  } from "./features/ContextProvider";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 
 
 function App() {
   const publicRoutes = [
     { index: true, path: "/", element: <Home /> },
+    { path: "/register", element: <Register /> },
     { path: "/login", element: <Login /> },
     { path: "/privacy", element: <Privacy /> },
     { path: "/terms", element: <Terms /> },

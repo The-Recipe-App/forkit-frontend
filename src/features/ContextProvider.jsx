@@ -4,17 +4,18 @@ import { useLocation } from "react-router-dom";
 const AppContext = createContext();
 
 export const ContextProvider = ({ children }) => {
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [role, setRole] = useState(null);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [wantsToLogIn, setWantsToLogIn] = useState(false);
+    const [wantsToRegister, setWantsToRegister] = useState(false);
     const location = useLocation();
     const[isNavOpen, setIsNavOpen] = useState(() => (typeof window !== "undefined" ? windowWidth > 1024 : true));
-    useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 8000);
-        return () => clearTimeout(timer);
-    }, []);
+    // useEffect(() => {
+    //     const timer = setTimeout(() => setIsLoading(false), 8000);
+    //     return () => clearTimeout(timer);
+    // }, []);
 
     // const [pageTitle, setPageTitle] = useState("");
 
@@ -27,6 +28,10 @@ export const ContextProvider = ({ children }) => {
             setWantsToLogIn(true);
         } else {
             setWantsToLogIn(false);
+        } if (location.pathname === "/register") {
+            setWantsToRegister(true);
+        } else {
+            setWantsToRegister(false);
         }
     }, [location]);
 
@@ -45,7 +50,7 @@ export const ContextProvider = ({ children }) => {
 
 
     return (
-        <AppContext.Provider value={{ isLoading, setIsLoading, /*setPageTitle,*/ isAuthorized, setIsAuthorized, role, setRole, windowWidth, wantsToLogIn, setWantsToLogIn }}>
+        <AppContext.Provider value={{ isLoading, setIsLoading, /*setPageTitle,*/ isAuthorized, setIsAuthorized, role, setRole, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister }}>
             {children}
         </AppContext.Provider>
     );

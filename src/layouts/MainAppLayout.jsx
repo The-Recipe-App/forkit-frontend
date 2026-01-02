@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Toaster } from "react-hot-toast";
-import { Outlet } from "react-router-dom";
+import { Outlet, useNavigate  } from "react-router-dom";
 
 import TopBar from "../components/TopBar";
 import NavBar from "../components/NavBar";
@@ -11,13 +11,16 @@ import { useContextProps } from "../features/Contexts";
 import { useContextManager } from "../features/ContextProvider";
 import { motion, AnimatePresence } from "framer-motion";
 import Login from "../pages/Login";
+import Register from "../pages/Register";
+import backendUrlV1 from "../urls/backendUrl";
 
 const MainAppLayout = () => {
+    const navigate = useNavigate();
     const [contextProps, setContextProps] = useContextProps();
     const [footerVisible, setFooterVisible] = useState(false);
     const [shouldExitAnimation, setShouldExitAnimation] = useState(false);
 
-    const { isLoading, setIsLoading, isAuthorized, windowWidth, isNavOpen, setIsNavOpen, wantsToLogIn, setWantsToLogIn } =
+    const { isLoading, setIsLoading, setIsAuthorized, isAuthorized, windowWidth, isNavOpen, setIsNavOpen, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister } =
         useContextManager();
 
     const isOverlay = windowWidth < 1024;
@@ -26,6 +29,7 @@ const MainAppLayout = () => {
     const toggleBtnRef = useRef(null);
 
     const TOPBAR_HEIGHT = "3.875rem";
+
 
     useEffect(() => {
         let observer;
@@ -81,17 +85,44 @@ const MainAppLayout = () => {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
+    useEffect(() => {
+        if (isAuthorized) return;
+    
+        const checkAuth = async () => {
+            try {
+                const res = await fetch(
+                    `${backendUrlV1}auth/me`,
+                    { credentials: "include" }
+                );
+    
+                if (res.ok) {
+                    console.log("User is authorized via cookie.");
+                    setIsAuthorized(true);
+                } else {
+                    setIsAuthorized(false);
+                }
+            } catch (err) {
+                console.error("Auth check failed:", err);
+                setIsAuthorized(false);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+    
+        checkAuth();
+    }, [isAuthorized]);
 
     return (
         <div className="min-h-screen flex flex-col bg-transparent">
             {wantsToLogIn ?
-                <Login setWantsToLogIn={setWantsToLogIn} />
-                : (
+                <Login setIsAuthorized={setIsAuthorized} setIsLoading={setIsLoading} />
+                : wantsToRegister ? <Register setWantsToLogIn={setWantsToLogIn} /> : (
                     <>
                         {/* Top Bar */}
                         {/* TopBar spacer – prevents layout shift */}
                         {shouldExitAnimation && <div style={{ height: TOPBAR_HEIGHT }} />}
                         <TopBar
+                            setIsAuthorized={setIsAuthorized}
                             toggleBtnRef={toggleBtnRef}
                             isAuthorized={isAuthorized}
                             windowWidth={windowWidth}

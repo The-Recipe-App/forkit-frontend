@@ -20,7 +20,7 @@ function Login({ setIsAuthorized, setIsLoading }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
-        setIsLoading(true);
+        //setIsLoading(true);
         setLoading(true);
     
         try {
@@ -34,7 +34,10 @@ function Login({ setIsAuthorized, setIsLoading }) {
             }
     
             setIsAuthorized(true);
-            navigate("/");
+            if (localStorage.getItem("redirectAfterLogin")) {
+                navigate(localStorage.getItem("redirectAfterLogin"));
+                localStorage.removeItem("redirectAfterLogin");
+            } else navigate("/");
         } catch (err) {
             setError(err.message || "Invalid email or password.");
         } finally {

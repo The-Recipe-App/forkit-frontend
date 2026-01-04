@@ -10,6 +10,9 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Recipes from "./pages/Recipes";
+import RecipeDetail from "./pages/RecipeDetail";
+import ForkEditor from "./pages/ForkEditor";
 
 
 function App() {
@@ -19,6 +22,9 @@ function App() {
     { path: "/login", element: <Login /> },
     { path: "/privacy", element: <Privacy /> },
     { path: "/terms", element: <Terms /> },
+    { path: "/recipes", element: <Recipes /> },
+    { path: "/recipes/:id", element: <RecipeDetail /> },
+    { path: "/recipes/:id/fork", element: <ForkEditor /> },
   ];
 
 

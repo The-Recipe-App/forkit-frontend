@@ -20,7 +20,7 @@ export default function AuthorityManager() {
         let cancelled = false;
 
         const bootstrapAuth = async () => {
-            setIsLoading(true);
+            //setIsLoading(true);
 
             try {
                 const user = await getCurrentUser();

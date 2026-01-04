@@ -1,4 +1,4 @@
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef } from "react";
 import {
     Home,
@@ -16,13 +16,21 @@ import Logo from "../features/Logo";
 import { set } from "date-fns";
 import backendUrlV1 from "../urls/backendUrl";
 import { logout } from "../features/auth/authApi";
+import Modal from "./popUpModal";
 
-
-const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, setSidebarMode, setWantsToLogIn }) => {
+const TopBar = ({ isAuthorized, windowWidth, setSidebarMode, setWantsToLogIn }) => {
     const location = useLocation();
+    const [showLogout, setShowLogout] = useState(false);
+    const [showAuthGate, setShowAuthGate] = useState(false);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [showCreateHint, setShowCreateHint] = useState(false);
+    const [sessionExpired, setSessionExpired] = useState(false);
+
     const [mobileOpen, setMobileOpen] = useState(false);
     const dropdownRef = useRef(null);
     const [avatarUrl, setAvatarUrl] = useState(null);
+
+    const navigate = useNavigate();
 
     /* Close dropdown on outside click */
     useEffect(() => {
@@ -51,6 +59,10 @@ const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, set
             setAvatarUrl(null);
             return;
         }
+        if (localStorage.getItem("avatarUrl")) {
+            setAvatarUrl(localStorage.getItem("avatarUrl"));
+            return;
+        }
 
         fetch(`${backendUrlV1}auth/me`, {
             credentials: "include",
@@ -58,10 +70,12 @@ const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, set
             .then((res) => {
                 if (!res.ok) throw new Error("Not authenticated");
                 return res.json();
-            }) 
+            })
             .then((data) => {
-                console.log(data.avatar_url);
                 setAvatarUrl(data?.avatar_url);
+                if (data?.avatar_url) {
+                    localStorage.setItem("avatarUrl", data.avatar_url);
+                }
             })
             .catch(() => {
                 setAvatarUrl(null);
@@ -71,12 +85,117 @@ const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, set
     return (
         <header
             className={`
-                border-b fixed w-full border-gray-700
+                border-b w-full border-gray-700
                 bg-[#393939] bg-opacity-[31%] text-white
                 px-4 py-2 shadow-lg z-50 min-h-[62px]
-                ${footerVisible ? "relative" : "fixed top-0"}
+                fixed
             `}
         >
+
+            {/* MODALS */}
+            <Modal
+                isOpen={showLogout}
+                lock
+                type="warning"
+                title="Log out?"
+                description="You'll need to sign in again to access your account."
+                primaryAction={{
+                    label: "Log out",
+                    onClick: async () => {
+                        await logout();
+                        setShowLogout(false);
+                    },
+                }}
+                secondaryAction={{
+                    label: "Cancel",
+                    onClick: () => setShowLogout(false),
+                }}
+            >
+                <p className="text-sm text-gray-400">
+                    Unsaved changes may be lost.
+                </p>
+            </Modal>
+            <Modal
+                isOpen={showAuthGate}
+                lock={false}
+                showCloseButton
+                onClose={() => setShowAuthGate(false)}
+                type="info"
+                title="Sign in required"
+                description="You need an account to use this feature."
+                primaryAction={{
+                    label: "Sign in",
+                    onClick: () => {
+                        window.location.href = "/login";
+                    },
+                }}
+                secondaryAction={{
+                    label: "Create account",
+                    onClick: () => {
+                        window.location.href = "/register";
+                    },
+                }}
+            >
+                <p className="text-sm text-gray-400">
+                    It's free and takes less than a minute.
+                </p>
+            </Modal>
+            <Modal
+                isOpen={showNotifications}
+                lock={false}
+                type="info"
+                title="Notifications"
+                description="You're all caught up 🎉"
+                primaryAction={{
+                    label: "Close",
+                    onClick: () => setShowNotifications(false),
+                }}
+            >
+                <div className="text-sm text-gray-400">
+                    We'll notify you when something important happens.
+                </div>
+            </Modal>
+            <Modal
+                isOpen={showCreateHint}
+                lock={false}
+                type="success"
+                title="Create a recipe"
+                description="Start from scratch or build on someone else's idea."
+                primaryAction={{
+                    label: "Start cooking",
+                    onClick: () => {
+                        window.location.href = "/create";
+                    },
+                }}
+                secondaryAction={{
+                    label: "Cancel",
+                    onClick: () => {
+                        setShowCreateHint(false);
+                    },
+                }}
+
+            >
+                <ul className="text-sm text-gray-400 space-y-1">
+                    <li>• Write your own recipe</li>
+                    <li>• Fork and improve others</li>
+                    <li>• Track evolution over time</li>
+                </ul>
+            </Modal>
+            <Modal
+                isOpen={sessionExpired}
+                lock
+                type="error"
+                title="Session expired"
+                description="Please sign in again to continue."
+                primaryAction={{
+                    label: "Sign in",
+                    onClick: () => {
+                        window.location.href = "/login";
+                    },
+                }}
+            />
+            {/* MODALS */}
+
             <div className="flex items-center justify-between w-full gap-4">
                 {/* LEFT: Logo */}
                 <div
@@ -94,7 +213,7 @@ const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, set
                         hover:bg-gray-700
                                 transition-colors
                                 "
-                        title="Toggle sidebar (Ctrl+B)"
+                        title="Toggle navigation menu"
                     >
                         ☰
                     </button>
@@ -102,15 +221,8 @@ const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, set
                     <Logo width={120} />
                 </div>
                 {/* CENTER: Desktop Main Actions */}
-                {/* {!isAuthorized && windowWidth > 1024 && (
-                    <nav className="flex items-center md:gap-1 lg:gap-6">
-                        <IconButton icon={Home} label="Home" />
-                        <IconButton icon={PlusCircle} label="Create" />
-                        <IconButton icon={Heart} label="Favorites" />
-                    </nav>
-                )} */}
-                {!isAuthorized && windowWidth >= 600 && (
-                    <div className="relative flex items-center w-full md:w-96">
+                {windowWidth >= 600 && (
+                    <div className="relative flex items-center w-[37.2452%] md:w-[45%] md:max-w-[400px]">
                         {/* Search Icon */}
                         <div className="absolute left-4 pointer-events-none text-gray-400">
                             <Search size={18} />
@@ -140,47 +252,27 @@ const TopBar = ({ setIsAuthorized, isAuthorized, windowWidth, footerVisible, set
                 )}
 
 
+
                 {/* RIGHT: Notifications + Profile */}
                 <div className="flex items-center justify-between">
 
                     <div className="flex items-center gap-4">
+                        {windowWidth > 1024 && (
+                            <nav className="flex items-center md:gap-1 lg:gap-6">
+                                <IconButton onClick={() => navigate("/")} icon={Home} label="Home" />
+                                <IconButton onClick={() => {
+                                    if (!isAuthorized) {
+                                        setShowAuthGate(true);
+                                        return;
+                                    } return setShowCreateHint(true);
+                                }} icon={Heart} label="Favorites" />
+                            </nav>
+                        )}
                         {isAuthorized && <IconButton icon={Bell} />}
-                        <ProfileButton isAuthorized={isAuthorized} avatarUrl={avatarUrl} />
+                        <ProfileButton dropdownRef={dropdownRef} windowWidth={windowWidth} isAuthorized={isAuthorized} avatarUrl={avatarUrl} setShowLogout={setShowLogout} />
                     </div>
                     {/* CENTER: Mobile Dropdown */}
-                    {!isAuthorized && windowWidth <= 1024 && (
-                        <div className="relative text-white" ref={dropdownRef}>
-                            <button
-                                onClick={() => setMobileOpen(o => !o)}
-                                className="flex items-center justify-center w-10 h-10 rounded-md shadow-md hover:bg-neutral-800 transition-colors"
-                                title="Menu"
-                            >
-                                <div className="flex gap-1">
-                                    <span className="w-1 h-1 rounded-full bg-white" />
-                                    <span className="w-1 h-1 rounded-full bg-white" />
-                                    <span className="w-1 h-1 rounded-full bg-white" />
-                                </div>
-                            </button>
 
-
-                            {mobileOpen && (
-                                <div
-                                    className="
-                                absolute right-0 top-12
-                                w-52 rounded-lg
-                                bg-[#2f2f2f]
-                                border border-gray-700
-                                shadow-xl overflow-hidden
-                            "
-                                >
-                                    <DropdownItem icon={Home} label="Home" />
-                                    {windowWidth <= 600 && <DropdownItem icon={Search} label="Search" />}
-                                    <DropdownItem icon={PlusCircle} label="Create" />
-                                    <DropdownItem icon={Heart} label="Favorites" />
-                                </div>
-                            )}
-                        </div>
-                    )}
                 </div>
 
             </div>
@@ -192,13 +284,14 @@ export default TopBar;
 
 /* ---------------- Components ---------------- */
 
-const IconButton = ({ icon: Icon, label }) => (
+const IconButton = ({ icon: Icon, label, onClick }) => (
     <button
         className="
             flex items-center gap-1
             text-gray-300 hover:text-white
             transition-colors
         "
+        onClick={onClick}
         title={label}
     >
         <Icon size={20} />
@@ -212,8 +305,9 @@ const DropdownItem = ({ icon: Icon, label }) => (
             w-full flex items-center gap-3
             px-4 py-3 text-sm
             text-gray-300 hover:text-white
-            hover:bg-gray-700
-            transition-colors
+            hover:bg-neutral-700
+            transition-colorstext-left
+            transition rounded-none
         "
     >
         <Icon size={18} />
@@ -221,7 +315,7 @@ const DropdownItem = ({ icon: Icon, label }) => (
     </button>
 );
 
-const ProfileButton = ({ isAuthorized, avatarUrl, onLogout }) => {
+const ProfileButton = ({ isAuthorized, avatarUrl, setShowLogout, dropdownRef, windowWidth }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -244,14 +338,7 @@ const ProfileButton = ({ isAuthorized, avatarUrl, onLogout }) => {
                     onClick={() => (window.location.href = "/login")}
                 >
                     <User size={20} />
-                    <span className="text-sm">Login</span>
-                </button>
-                <button
-                    className="flex items-center gap-1 text-gray-300 hover:text-white transition"
-                    onClick={() => (window.location.href = "/register")}
-                >
-                    <Book size={20} />
-                    <span className="text-sm">Register</span>
+                    <span className="text-sm">Sign In</span>
                 </button>
             </div>
         );
@@ -287,17 +374,19 @@ const ProfileButton = ({ isAuthorized, avatarUrl, onLogout }) => {
             {open && (
                 <div
                     className="
-                        absolute right-0 mt-2 w-40
-                        bg-gray-900 border border-gray-700
-                        rounded-lg shadow-lg z-50
-                        overflow-hidden
-                    "
+                absolute right-0 mt-2 w-44
+                bg-neutral-900/95 backdrop-blur
+                border border-neutral-700
+                rounded-xl shadow-2xl z-50
+                overflow-hidden
+            "
+
                 >
                     <button
                         className="
                             w-full px-4 py-2 text-left text-sm
-                            text-gray-200 hover:bg-gray-800
-                            transition
+                            text-gray-200 hover:bg-neutral-800
+                            transition rounded-none
                         "
                         onClick={() => {
                             setOpen(false);
@@ -305,17 +394,31 @@ const ProfileButton = ({ isAuthorized, avatarUrl, onLogout }) => {
                     >
                         Profile
                     </button>
-
+                    {windowWidth < 1024 && <div className="relative text-white" ref={dropdownRef}>
+                        <div
+                            className="
+                                right-0 top-12
+                                border-y border-neutral-700
+                            "
+                        >
+                            <DropdownItem icon={Home} label="Home" />
+                            {windowWidth <= 600 && <DropdownItem icon={Search} label="Search" />}
+                            <DropdownItem icon={PlusCircle} label="Create" />
+                            <DropdownItem icon={Heart} label="Favorites" />
+                        </div>
+                    </div>
+                    }
                     <button
                         className="
                             w-full px-4 py-2 text-left text-sm
-                            text-red-400 hover:bg-gray-800
-                            transition flex items-center gap-2
+                            text-red-400 hover:bg-neutral-800
+                            transition flex items-center gap-2 rounded-none
                         "
                         onClick={() => {
                             setOpen(false);
-                            logout();
+                            setShowLogout(true);
                         }}
+
                     >
                         <LogOut size={14} />
                         Logout

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Toaster } from "react-hot-toast";
-import { Outlet, useNavigate  } from "react-router-dom";
+import { Outlet, useNavigate } from "react-router-dom";
 
 import TopBar from "../components/TopBar";
 import NavBar from "../components/NavBar";
@@ -16,68 +16,24 @@ import backendUrlV1 from "../urls/backendUrl";
 
 const MainAppLayout = () => {
     const navigate = useNavigate();
-    const [contextProps, setContextProps] = useContextProps();
-    const [footerVisible, setFooterVisible] = useState(false);
     const [shouldExitAnimation, setShouldExitAnimation] = useState(false);
 
     const { isLoading, setIsLoading, setIsAuthorized, isAuthorized, windowWidth, isNavOpen, setIsNavOpen, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister } =
         useContextManager();
 
     const isOverlay = windowWidth < 1024;
-    const [navOpen, setNavOpen] = useState(windowWidth > 1024);
+    const [navOpen, setNavOpen] = useState( windowWidth > 1024);
     const navRef = useRef(null);
     const toggleBtnRef = useRef(null);
 
     const TOPBAR_HEIGHT = "3.875rem";
 
-
-    useEffect(() => {
-        let observer;
-        let sentinel;
-
-        const attachObserver = () => {
-            sentinel = document.getElementById("footer-sentinel");
-            if (!sentinel) return;
-
-            observer = new IntersectionObserver(
-                ([entry]) => {
-                    setFooterVisible(entry.isIntersecting);
-                },
-                {
-                    root: null,
-                    threshold: 0.5,
-                    // helps detect earlier & survives layout shifts
-                    rootMargin: "100px 0px 0px 0px",
-                }
-            );
-
-            observer.observe(sentinel);
-        };
-
-        attachObserver();
-
-        const onReflow = () => {
-            if (!sentinel || !document.body.contains(sentinel)) {
-                observer?.disconnect();
-                attachObserver();
-            }
-        };
-
-        window.addEventListener("resize", onReflow);
-        window.addEventListener("scroll", onReflow, { passive: true });
-
-        return () => {
-            observer?.disconnect();
-            window.removeEventListener("resize", onReflow);
-            window.removeEventListener("scroll", onReflow);
-        };
-    }, []);
-
     useEffect(() => {
         const handleResize = () => {
-            setNavOpen(window.innerWidth > 1024);
-            if (window.innerWidth <= 1024);
-
+            if (navOpen) {
+                setNavOpen(window.innerWidth > 1024);
+                if (window.innerWidth <= 1024);
+            }
         };
 
         handleResize();
@@ -87,16 +43,15 @@ const MainAppLayout = () => {
 
     useEffect(() => {
         if (isAuthorized) return;
-    
+
         const checkAuth = async () => {
             try {
                 const res = await fetch(
                     `${backendUrlV1}auth/me`,
                     { credentials: "include" }
                 );
-    
+
                 if (res.ok) {
-                    console.log("User is authorized via cookie.");
                     setIsAuthorized(true);
                 } else {
                     setIsAuthorized(false);
@@ -108,7 +63,7 @@ const MainAppLayout = () => {
                 setIsLoading(false);
             }
         };
-    
+
         checkAuth();
     }, [isAuthorized]);
 
@@ -126,8 +81,7 @@ const MainAppLayout = () => {
                             toggleBtnRef={toggleBtnRef}
                             isAuthorized={isAuthorized}
                             windowWidth={windowWidth}
-                            footerVisible={footerVisible && shouldExitAnimation} 
-                            setSidebarMode={setNavOpen} 
+                            setSidebarMode={setNavOpen}
                             setWantsToLogIn={setWantsToLogIn}
                         />
 
@@ -151,11 +105,11 @@ const MainAppLayout = () => {
         `}
                             >
                                 <NavBar
+                                    setNavOpen={setNavOpen}
                                     isLoading={isLoading}
                                     isOpen={navOpen}
                                     isOverlay={isOverlay}
                                     navRef={navRef}
-                                    footerVisible={footerVisible}
                                     onNavigate={() => isOverlay && setNavOpen(false)}
                                 />
                             </div>
@@ -174,7 +128,7 @@ const MainAppLayout = () => {
                                     <LoadingScreen shouldExit={shouldExitAnimation} setShouldExit={setShouldExitAnimation} isLoading={isLoading} />
                                 </motion.div>
                             </AnimatePresence>
-                            {!shouldExitAnimation ? null : <main
+                            {!(!shouldExitAnimation || shouldExitAnimation) ? null : <main
                                 className={`
             flex-1 transition-all duration-300
             ${!isOverlay && navOpen ? "ml-64" : "ml-0"}
@@ -192,7 +146,7 @@ const MainAppLayout = () => {
                         </div>
 
                         {/* Footer */}
-                        {shouldExitAnimation && <Footer isAuthorized={isAuthorized} />}
+                        {shouldExitAnimation && <Footer navOverlay={isOverlay} navOpen={navOpen} isAuthorized={isAuthorized} />}
                     </>
                 )
             }

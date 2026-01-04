@@ -1,19 +1,17 @@
 import Logo from "../features/Logo";
 
-const Footer = ({ isAuthorized }) => {
+const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
     return (
-        <footer className="bg-[#18181B] text-gray-400 text-sm">
-            <div id="footer-sentinel" className="h-px" />
-
-            <div className="max-w-7xl mx-auto px-6 py-10">
+        <footer className={`${!navOverlay && navOpen ? "ml-64" : "ml-0"} transition-all duration-300 bg-[#18181B] text-gray-400 text-sm`}>
+            <div className="max-w-full mx-auto py-5">
                 {/* Top Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-8 border-b border-gray-700 pb-8">
+                <div className="grid grid-cols-1 px-6 md:grid-cols-5 gap-8 border-b border-gray-700 pb-8">
 
                     {/* Brand */}
                     <div className="md:col-span-2">
                         <Logo
                             width={300}
-                            src="footer_logo.svg"
+                            src="/footer_logo.svg"
                             alt="Forkit logo"
                         />
                         <p className="text-gray-500 leading-relaxed mt-2">
@@ -69,7 +67,7 @@ const Footer = ({ isAuthorized }) => {
                 </div>
 
                 {/* Bottom Bar */}
-                <div className="flex flex-col md:flex-row items-center justify-between mt-6 gap-4">
+                <div className="flex px-6 flex-col md:flex-row items-center justify-between mt-6 gap-4">
                     <p className="text-gray-500 text-center md:text-left">
                         An open-source project ·{" "}
                         <a

@@ -1,2 +1,9 @@
-const backendUrlV1 = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000/api/v1/";
+const rawBase = import.meta.env.VITE_BACKEND_URL;
+
+// If env exists → absolute backend
+// If not → same-origin
+const backendUrlV1 = rawBase
+    ? rawBase.replace(/\/+$/, "") + "/"
+    : "";
+
 export default backendUrlV1;

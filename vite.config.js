@@ -7,10 +7,17 @@ export default defineConfig({
   optimizeDeps: {
     include: ["swiper"],
   },
-  server: {
-    host: '0.0.0.0',
-    port: 5173
-  },
+server: {
+  host: '0.0.0.0',
+  port: 5173,
+  proxy: {
+    '/api': {
+      target: 'https://forkit.up.railway.app',
+      changeOrigin: true,
+      secure: true
+    }
+  }
+},
   define: {
     global: {},
   },

@@ -17,7 +17,6 @@ import { set } from "date-fns";
 import backendUrlV1 from "../urls/backendUrl";
 import { logout } from "../features/auth/authApi";
 import Modal from "./popUpModal";
-import { apiUrl } from "../features/api/apiUrl";
 
 const TopBar = ({ isAuthorized, windowWidth, setSidebarMode, setWantsToLogIn }) => {
     const location = useLocation();
@@ -65,7 +64,7 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode, setWantsToLogIn }) 
             return;
         }
 
-        fetch(apiUrl('/auth/me'), {
+        fetch(`${backendUrlV1}auth/me`, {
             credentials: "include",
         })
             .then((res) => {

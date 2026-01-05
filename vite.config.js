@@ -10,14 +10,17 @@ export default defineConfig({
 server: {
   host: '0.0.0.0',
   port: 5173,
-  proxy: {
-    '/api': {
-      target: 'https://forkit.up.railway.app',
-      changeOrigin: true,
-      secure: true
-    }
-  }
 },
+  
+ preview: {
+    // ✅ Allow external access via Railway domain during `vite preview`
+    allowedHosts: ['forkit.up.railway.app'],
+    // (Optional) bind preview to all interfaces if you're exposing it
+    host: '0.0.0.0',
+    // (Optional) set a specific port if Railway expects one
+    // port: 4173,
+  },
+
   define: {
     global: {},
   },

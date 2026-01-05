@@ -64,7 +64,7 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode, setWantsToLogIn }) 
             return;
         }
 
-        fetch(`${backendUrlV1}auth/me`, {
+        fetch(`/auth/me`, {
             credentials: "include",
         })
             .then((res) => {

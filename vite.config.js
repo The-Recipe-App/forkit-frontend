@@ -7,12 +7,12 @@ export default defineConfig({
   optimizeDeps: {
     include: ["swiper"],
   },
-server: {
-  host: '0.0.0.0',
-  port: 5173,
-},
-  
- preview: {
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+  },
+
+  preview: {
     // ✅ Allow external access via Railway domain during `vite preview`
     allowedHosts: ['forkit.up.railway.app'],
     // (Optional) bind preview to all interfaces if you're exposing it

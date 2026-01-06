@@ -47,7 +47,7 @@ const MainAppLayout = () => {
         const checkAuth = async () => {
             try {
                 const res = await fetch(
-                    `${backendUrlV1}auth/me`,
+                    `${backendUrlV1}/auth/me`,
                     { credentials: "include" }
                 );
 

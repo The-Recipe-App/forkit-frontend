@@ -40,7 +40,7 @@ function extractErrorMessage(data, fallback) {
  * Login (cookie-based)
  */
 export async function loginWithPassword(email, password) {
-    const res = await fetch(`/auth/login`, {
+    const res = await fetch(`${backendUrlV1}/auth/login`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -64,7 +64,7 @@ export async function loginWithPassword(email, password) {
  * Register (cookie-based)
  */
 export async function registerWithPassword(email, password, username = null) {
-    const res = await fetch(`/auth/register`, {
+    const res = await fetch(`${backendUrlV1}/auth/register`, {
         method: "POST",
         headers: jsonHeaders(),
         credentials: "include",
@@ -90,7 +90,7 @@ export async function registerWithPassword(email, password, username = null) {
  * Get current user (from cookie)
  */
 export async function getCurrentUser() {
-    const res = await fetch(`/auth/me`, {
+    const res = await fetch(`${backendUrlV1}/auth/me`, {
         credentials: "include",
     });
 
@@ -107,7 +107,7 @@ export async function getCurrentUser() {
 export async function logout() {
     localStorage.removeItem("redirectAfterLogin");
     //localStorage.removeItem("avatarUrl");
-    const res = await fetch(`/auth/logout`, {
+    const res = await fetch(`${backendUrlV1}/auth/logout`, {
         method: "POST",
         credentials: "include",
     });

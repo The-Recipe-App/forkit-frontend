@@ -13,245 +13,212 @@ import { useContextManager } from "../features/ContextProvider";
 
 export default function RecipeDetail() {
     const { id } = useParams();
-    const navigate = useNavigate();
     const { isAuthorized } = useContextManager();
-
     const recipe = mockRecipesDetailed.find((r) => r.id === id);
+
     if (!recipe) return null;
 
     return (
-        <div className="max-w-[1200px] mx-auto px-6 py-8">
-            <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-10">
-                <LeftColumn recipe={recipe} isAuthorized={isAuthorized} />
-                <RightColumn recipe={recipe} isAuthorized={isAuthorized} />
+        <div className="max-w-[1200px] mx-auto px-6 py-6">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
+                <MainColumn recipe={recipe} isAuthorized={isAuthorized} />
+                <SideColumn isAuthorized={isAuthorized} />
             </div>
         </div>
     );
 }
 
-/* ───────────────────────── Left Column ───────────────────────── */
+/* ───────────────────────── Main Column ───────────────────────── */
 
-function LeftColumn({ recipe, isAuthorized }) {
+function MainColumn({ recipe, isAuthorized }) {
     const navigate = useNavigate();
 
     return (
         <div className="space-y-6">
-            {/* Hero Image */}
-            <div className="relative rounded-2xl overflow-hidden">
+            {/* Hero */}
+            <div className="rounded-xl overflow-hidden">
                 <img
                     src={recipe.media.hero_image}
                     alt={recipe.title}
-                    className="w-full h-[320px] object-cover"
+                    className="w-full h-[360px] object-cover"
                 />
-                <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
             </div>
 
-            {/* Evolution Card */}
-            <div className="bg-[#111] rounded-2xl p-5 space-y-4 border border-white/5">
-                <h3 className="text-sm font-semibold text-white tracking-wide">
-                    This Recipe Has Evolved
-                </h3>
-
-                <EvolutionRow label="Original" value="12 times" />
-                <EvolutionRow label="Improved" value="4 times" />
-
-                {!isAuthorized && (
-                    <button
-                        onClick={() => navigate("/login")}
-                        className="w-full mt-2 flex items-center justify-center gap-2 text-sm text-neutral-400 hover:text-orange-400 bg-black/40 py-2 rounded-lg"
-                    >
-                        <Lock size={14} />
-                        Sign in to see all forks
-                    </button>
-                )}
-            </div>
-        </div>
-    );
-}
-
-function EvolutionRow({ label, value }) {
-    return (
-        <div className="flex items-center justify-between px-4 py-2 rounded-lg bg-black/40 hover:bg-black/60 transition">
-            <span className="text-neutral-300">{label}</span>
-            <span className="text-xs text-neutral-400">{value}</span>
-        </div>
-    );
-}
-
-/* ───────────────────────── Right Column ───────────────────────── */
-
-function RightColumn({ recipe, isAuthorized }) {
-    const navigate = useNavigate();
-
-    return (
-        <div className="space-y-8">
             {/* Title */}
-            <div className="space-y-2">
-                <h1 className="text-3xl font-semibold text-white leading-tight">
+            <div className="space-y-1">
+                <h1 className="text-2xl font-semibold text-white">
                     {recipe.title}
                 </h1>
-                <p className="text-sm text-neutral-400 max-w-xl">
-                    Crispy-edged, juicy burgers perfect for a quick bite.
+                <p className="text-sm text-neutral-400">
+                    Crispy-edged, juicy burgers perfect for quick bite.
                 </p>
             </div>
 
-            {/* Author + Stats */}
-            <div className="flex flex-wrap items-center gap-5 text-sm text-neutral-400">
+            {/* Author + stats */}
+            <div className="flex items-center gap-4 text-sm text-neutral-400">
                 <div className="flex items-center gap-2">
                     <img
                         src={`https://api.dicebear.com/7.x/thumbs/svg?seed=${recipe.author.username}`}
-                        className="w-7 h-7 rounded-full"
+                        className="w-6 h-6 rounded-full"
                         alt=""
                     />
-                    <span className="text-neutral-300 font-medium">
+                    <span className="text-neutral-300">
                         {recipe.author.username}
                     </span>
                 </div>
 
-                <Stat icon={GitFork} value="150 forks" />
-                <Stat icon={Eye} value="4.3k views" />
+                <span className="flex items-center gap-1">
+                    <GitFork size={14} /> {recipe.stats.forks} forks
+                </span>
+
+                <span className="flex items-center gap-1">
+                    <Eye size={14} /> 4.3k views
+                </span>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
                 <button
                     disabled={!isAuthorized}
-                    onClick={() => navigate(`/recipes/${recipe.id}/fork`)}
-                    className="disabled:opacity-50 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 text-black text-sm font-semibold hover:bg-orange-600 transition"
+                    onClick={() =>
+                        navigate(`/recipes/${recipe.id}/fork`)
+                    }
+                    className="disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-black text-sm font-medium hover:bg-orange-600"
                 >
                     <GitFork size={16} />
                     Fork this recipe
                 </button>
 
                 {!isAuthorized && (
-                    <button
-                        onClick={() => navigate("/login")}
-                        className="text-sm text-orange-400 flex items-center gap-2"
-                    >
+                    <span className="text-sm text-neutral-400 flex items-center gap-2">
                         <Lock size={14} />
-                        Sign in to fork
-                    </button>
+                        Sign in to save
+                    </span>
                 )}
 
-                <button className="p-2 rounded-xl bg-[#111] hover:bg-black/60">
+                <button className="p-2 rounded-lg bg-[#141414] hover:bg-black/60">
                     <Heart size={16} className="text-neutral-400" />
                 </button>
             </div>
 
-            {/* Ingredients */}
-            <Ingredients recipe={recipe} />
+            {/* Evolution */}
+            <Section title="This Recipe Has Evolved">
+                <p className="text-sm text-neutral-400 mb-3">
+                    Original → 12 times → Improved 4 times
+                </p>
 
-            {/* Steps */}
-            <Steps recipe={recipe} isAuthorized={isAuthorized} />
-
-            {/* Fork History */}
-            <ForkHistory recipe={recipe} isAuthorized={isAuthorized} />
-        </div>
-    );
-}
-
-function Stat({ icon: Icon, value }) {
-    return (
-        <span className="flex items-center gap-1">
-            <Icon size={14} />
-            {value}
-        </span>
-    );
-}
-
-/* ───────────────────────── Ingredients ───────────────────────── */
-
-function Ingredients({ recipe }) {
-    return (
-        <div className="space-y-3">
-            <h3 className="text-lg font-medium text-white">Ingredients</h3>
-
-            <div className="bg-[#111] rounded-2xl divide-y divide-white/5 border border-white/5">
-                {recipe.ingredients.map((item, i) => (
-                    <div
-                        key={i}
-                        className="flex items-center justify-between px-5 py-3 text-sm hover:bg-black/40 transition"
-                    >
-                        <span className="text-neutral-300 flex items-center gap-3">
-                            <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-                            {item}
-                        </span>
-                        <ChevronRight size={14} className="text-neutral-600" />
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-/* ───────────────────────── Steps ───────────────────────── */
-
-function Steps({ recipe, isAuthorized }) {
-    return (
-        <div className="space-y-3">
-            <h3 className="text-lg font-medium text-white">Steps</h3>
-
-            <div className="bg-[#111] rounded-2xl border border-white/5 overflow-hidden">
-                {!isAuthorized ? (
-                    <div className="flex items-center justify-center gap-2 py-6 text-sm text-neutral-400">
-                        <Lock size={14} />
-                        Sign in to view steps
-                    </div>
-                ) : (
-                    recipe.steps.map((step, i) => (
-                        <div
-                            key={i}
-                            className="px-5 py-4 text-sm text-neutral-300 border-b border-white/5 last:border-none"
-                        >
-                            <span className="text-orange-400 font-medium mr-2">
-                                {i + 1}.
-                            </span>
-                            {step}
-                        </div>
-                    ))
-                )}
-            </div>
-        </div>
-    );
-}
-
-/* ───────────────────────── Fork History ───────────────────────── */
-
-function ForkHistory({ recipe, isAuthorized }) {
-    return (
-        <div className="space-y-3">
-            <h3 className="text-lg font-medium text-white">
-                This Recipe Has Evolved
-            </h3>
-
-            <div className="space-y-2">
-                {recipe.lineage.slice(0, 3).map((item, i) => (
-                    <div
-                        key={i}
-                        className="flex items-center justify-between bg-[#111] px-4 py-3 rounded-xl border border-white/5"
-                    >
-                        <div className="text-sm text-neutral-300">
-                            <span className="font-medium">{item.author}</span>{" "}
-                            {item.change}
-                        </div>
-                        <span className="text-xs text-neutral-500">
-                            ★★★★☆
-                        </span>
-                    </div>
-                ))}
+                <EvolutionCard author="MicheelForks" text="added secret sauce" />
+                <EvolutionCard author="GrillMaster" text="added caramelized onions" />
+                <EvolutionCard author="BettyBuns" text="used brioche buns instead" />
 
                 {!isAuthorized && (
-                    <div className="flex items-center justify-center gap-2 py-3 text-sm text-neutral-400 bg-black/40 rounded-xl">
+                    <div className="mt-3 text-sm text-neutral-400 flex items-center gap-2">
                         <Lock size={14} />
                         Sign in to see all forks
                     </div>
                 )}
-            </div>
+            </Section>
+
+            {/* Ingredients */}
+            <Section title="Ingredients">
+                <div className="bg-[#141414] rounded-xl divide-y divide-white/5">
+                    {recipe.ingredients.map((item, i) => (
+                        <div
+                            key={i}
+                            className="flex items-center justify-between px-4 py-3 text-sm"
+                        >
+                            <span className="text-neutral-300 flex items-center gap-2">
+                                <span className="text-orange-400">•</span>
+                                {item}
+                            </span>
+                            <ChevronRight size={14} className="text-neutral-600" />
+                        </div>
+                    ))}
+                </div>
+            </Section>
+
+            {/* Steps */}
+            <Section title="Steps">
+                {!isAuthorized ? (
+                    <div className="text-sm text-neutral-400 flex items-center gap-2">
+                        <Lock size={14} />
+                        Want to adjust things or techniques? Fork it.
+                    </div>
+                ) : (
+                    recipe.steps.map((step, i) => (
+                        <div key={i} className="text-sm text-neutral-300 py-1">
+                            {i + 1}. {step}
+                        </div>
+                    ))
+                )}
+            </Section>
         </div>
     );
 }
 
-/* ───────────────────────── Mock Data ───────────────────────── */
+/* ───────────────────────── Side Column ───────────────────────── */
+
+function SideColumn({ isAuthorized }) {
+    return (
+        <div className="bg-[#141414] rounded-xl p-5 h-fit">
+            <h3 className="text-xl font-semibold text-white mb-2">
+                Forkit
+            </h3>
+
+            <p className="text-sm text-neutral-400 mb-4">
+                Recipes don’t evolve alone.
+                <br />
+                Fork it. Break it. Make it yours.
+            </p>
+
+            {!isAuthorized && (
+                <>
+                    <input
+                        placeholder="Email"
+                        className="w-full mb-2 bg-black/40 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                    />
+                    <input
+                        placeholder="Password"
+                        type="password"
+                        className="w-full mb-4 bg-black/40 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                    />
+
+                    <button className="w-full bg-orange-500 text-black py-2 rounded-lg text-sm font-medium hover:bg-orange-600">
+                        Continue
+                    </button>
+
+                    <p className="text-xs text-neutral-500 mt-3">
+                        Don’t have an account? Sign up.
+                    </p>
+                </>
+            )}
+        </div>
+    );
+}
+
+/* ───────────────────────── Small Components ───────────────────────── */
+
+function Section({ title, children }) {
+    return (
+        <div className="space-y-3">
+            <h3 className="text-lg font-medium text-white">{title}</h3>
+            {children}
+        </div>
+    );
+}
+
+function EvolutionCard({ author, text }) {
+    return (
+        <div className="flex items-center justify-between bg-black/40 px-4 py-3 rounded-lg mb-2">
+            <span className="text-sm text-neutral-300">
+                <strong>{author}</strong> {text}
+            </span>
+            <span className="text-xs text-neutral-500">★★★★☆</span>
+        </div>
+    );
+}
+
+/* ───────────────────────── Mock Data (UNCHANGED) ───────────────────────── */
 
 const mockRecipesDetailed = [
     {

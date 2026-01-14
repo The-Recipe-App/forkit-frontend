@@ -318,6 +318,7 @@ const DropdownItem = ({ icon: Icon, label }) => (
 const ProfileButton = ({ isAuthorized, avatarUrl, setShowLogout, dropdownRef, windowWidth }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
+    const navigate = useNavigate();
 
     // Close on outside click
     useEffect(() => {
@@ -390,6 +391,7 @@ const ProfileButton = ({ isAuthorized, avatarUrl, setShowLogout, dropdownRef, wi
                         "
                         onClick={() => {
                             setOpen(false);
+                            navigate("/profile");
                         }}
                     >
                         Profile

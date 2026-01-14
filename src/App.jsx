@@ -13,7 +13,7 @@ import Register from "./pages/Register";
 import Recipes from "./pages/Recipes";
 import RecipeDetail from "./pages/RecipeDetail";
 import ForkEditor from "./pages/ForkEditor";
-
+import ForkitProfilePage from "./pages/ForkitProfilePage";
 
 function App() {
   const publicRoutes = [
@@ -25,6 +25,7 @@ function App() {
     { path: "/recipes", element: <Recipes /> },
     { path: "/recipes/:id", element: <RecipeDetail /> },
     { path: "/recipes/:id/fork", element: <ForkEditor /> },
+    { path: "/profile", element: <ForkitProfilePage /> },
   ];
 
 

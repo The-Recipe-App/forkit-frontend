@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef } from "react";
 import {
     Home,
@@ -7,92 +7,30 @@ import {
     Heart,
     Bell,
     User,
-    Lock,
-    Book,
-    LogOut
+    LogOut,
 } from "lucide-react";
-import { AlignJustify } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import Logo from "../features/Logo";
-import { set } from "date-fns";
-import backendUrlV1 from "../urls/backendUrl";
+import { useMe } from "../hooks/useMe";
 import { logout } from "../features/auth/authApi";
 import Modal from "./popUpModal";
 
-const TopBar = ({ isAuthorized, windowWidth, setSidebarMode, setWantsToLogIn }) => {
-    const location = useLocation();
+/* ───────────────────────── TopBar ───────────────────────── */
+
+const TopBar = ({ isAuthorized, windowWidth, setSidebarMode }) => {
+    const { data: me } = useMe(isAuthorized);
+    const navigate = useNavigate();
+    const reduce = useReducedMotion();
+
     const [showLogout, setShowLogout] = useState(false);
     const [showAuthGate, setShowAuthGate] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
     const [showCreateHint, setShowCreateHint] = useState(false);
     const [sessionExpired, setSessionExpired] = useState(false);
 
-    const [mobileOpen, setMobileOpen] = useState(false);
-    const dropdownRef = useRef(null);
-    const [avatarUrl, setAvatarUrl] = useState(null);
-
-    const navigate = useNavigate();
-
-    /* Close dropdown on outside click */
-    useEffect(() => {
-        const handler = (e) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-                setMobileOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
-    }, []);
-
-    useEffect(() => {
-        const handler = (e) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-                setMobileOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
-    }, []);
-
-    /* Fetch current user (cookie-based auth) */
-    useEffect(() => {
-        if (!isAuthorized) {
-            setAvatarUrl(null);
-            return;
-        }
-        if (localStorage.getItem("avatarUrl")) {
-            setAvatarUrl(localStorage.getItem("avatarUrl"));
-            return;
-        }
-
-        fetch(`${backendUrlV1}/auth/me`, {
-            credentials: "include",
-        })
-            .then((res) => {
-                if (!res.ok) throw new Error("Not authenticated");
-                return res.json();
-            })
-            .then((data) => {
-                setAvatarUrl(data?.avatar_url);
-                if (data?.avatar_url) {
-                    localStorage.setItem("avatarUrl", data.avatar_url);
-                }
-            })
-            .catch(() => {
-                setAvatarUrl(null);
-            });
-    }, [isAuthorized]);
-
     return (
-        <header
-            className={`
-                border-b w-full border-gray-700
-                bg-[#393939] bg-opacity-[31%] text-white
-                px-4 py-2 shadow-lg z-50 min-h-[62px]
-                fixed
-            `}
-        >
-
-            {/* MODALS */}
+        <header className="fixed z-50 w-full min-h-[67px] max-h-[67px] border-b border-gray-700 bg-black/65 backdrop-blur-md px-4 py-2 text-white shadow-lg">
+            {/* ───────── MODALS ───────── */}
             <Modal
                 isOpen={showLogout}
                 lock
@@ -102,179 +40,103 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode, setWantsToLogIn }) 
                 primaryAction={{
                     label: "Log out",
                     onClick: async () => {
+                        localStorage.setItem("redirectAfterLogin", window.location.pathname);
                         await logout();
                         setShowLogout(false);
                     },
                 }}
-                secondaryAction={{
-                    label: "Cancel",
-                    onClick: () => setShowLogout(false),
-                }}
-            >
-                <p className="text-sm text-gray-400">
-                    Unsaved changes may be lost.
-                </p>
-            </Modal>
+                secondaryAction={{ label: "Cancel", onClick: () => setShowLogout(false) }}
+            />
+
             <Modal
                 isOpen={showAuthGate}
-                lock={false}
                 showCloseButton
-                onClose={() => setShowAuthGate(false)}
                 type="info"
                 title="Sign in required"
                 description="You need an account to use this feature."
-                primaryAction={{
-                    label: "Sign in",
-                    onClick: () => {
-                        window.location.href = "/login";
-                    },
-                }}
-                secondaryAction={{
-                    label: "Create account",
-                    onClick: () => {
-                        window.location.href = "/register";
-                    },
-                }}
-            >
-                <p className="text-sm text-gray-400">
-                    It's free and takes less than a minute.
-                </p>
-            </Modal>
+                primaryAction={{ label: "Sign in", onClick: () => navigate("/login") }}
+                secondaryAction={{ label: "Create account", onClick: () => navigate("/register") }}
+            />
+
             <Modal
                 isOpen={showNotifications}
-                lock={false}
                 type="info"
                 title="Notifications"
                 description="You're all caught up 🎉"
-                primaryAction={{
-                    label: "Close",
-                    onClick: () => setShowNotifications(false),
-                }}
-            >
-                <div className="text-sm text-gray-400">
-                    We'll notify you when something important happens.
-                </div>
-            </Modal>
+                primaryAction={{ label: "Close", onClick: () => setShowNotifications(false) }}
+            />
+
             <Modal
                 isOpen={showCreateHint}
-                lock={false}
                 type="success"
                 title="Create a recipe"
                 description="Start from scratch or build on someone else's idea."
-                primaryAction={{
-                    label: "Start cooking",
-                    onClick: () => {
-                        window.location.href = "/create";
-                    },
-                }}
-                secondaryAction={{
-                    label: "Cancel",
-                    onClick: () => {
-                        setShowCreateHint(false);
-                    },
-                }}
+                primaryAction={{ label: "Start cooking", onClick: () => navigate("/create") }}
+                secondaryAction={{ label: "Cancel", onClick: () => setShowCreateHint(false) }}
+            />
 
-            >
-                <ul className="text-sm text-gray-400 space-y-1">
-                    <li>• Write your own recipe</li>
-                    <li>• Fork and improve others</li>
-                    <li>• Track evolution over time</li>
-                </ul>
-            </Modal>
             <Modal
                 isOpen={sessionExpired}
                 lock
                 type="error"
                 title="Session expired"
                 description="Please sign in again to continue."
-                primaryAction={{
-                    label: "Sign in",
-                    onClick: () => {
-                        window.location.href = "/login";
-                    },
-                }}
+                primaryAction={{ label: "Sign in", onClick: () => navigate("/login") }}
             />
-            {/* MODALS */}
+            {/* ───────── MODALS ───────── */}
 
-            <div className="flex items-center justify-between w-full gap-4">
-                {/* LEFT: Logo */}
-                <div
-                    className="flex items-center gap-2"
-                    onContextMenu={(e) => e.preventDefault()}
-                    onDragStart={(e) => e.preventDefault()}
-                >
-                    <button
-                        onClick={() => setSidebarMode(o => !o)}
-                        className="
-                        flex items-center justify-center
-                        w-10 h-10 rounded-md
-                        border border-gray-600
-                        shadow-md
-                        hover:bg-gray-700
-                                transition-colors
-                                "
-                        title="Toggle navigation menu"
+            <div className="flex items-center justify-between gap-4">
+                {/* LEFT */}
+                <div className="flex items-center gap-2">
+                    <motion.button
+                        whileTap={reduce ? {} : { scale: 0.95 }}
+                        onClick={() => setSidebarMode((o) => !o)}
+                        className="w-10 h-10 rounded-md border border-gray-600 hover:bg-gray-700 transition"
                     >
                         ☰
-                    </button>
-
+                    </motion.button>
                     <Logo width={120} />
                 </div>
-                {/* CENTER: Desktop Main Actions */}
-                {windowWidth >= 600 && (
-                    <div className="relative flex items-center w-[37.2452%] md:w-[45%] md:max-w-[400px]">
-                        {/* Search Icon */}
-                        <div className="absolute left-4 pointer-events-none text-gray-400">
-                            <Search size={18} />
-                        </div>
 
-                        {/* Input */}
+                {/* CENTER SEARCH */}
+                {windowWidth >= 600 && (
+                    <div className="relative w-[45%] max-w-[400px]">
+                        <Search size={18} className="absolute left-4 top-3 text-gray-400" />
                         <input
                             type="search"
                             placeholder="Search recipes, techniques, cooks…"
-                            className="
-                                w-full
-                                pl-12 pr-4 py-2.5
-                                rounded-full
-                                bg-neutral-800/70
-                                border border-gray-600
-                                text-white placeholder-neutral-400
-                                shadow-md
-
-                                focus:outline-none
-                                focus:border-orange-500
-                                focus:ring-1/2 focus:ring-orange-500/90
-
-                                transition
-                            "
+                            className="w-full pl-12 pr-4 py-2.5 rounded-full bg-neutral-800/70 border border-gray-600 placeholder-neutral-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
                         />
                     </div>
                 )}
 
+                {/* RIGHT */}
+                <div className="flex items-center gap-4">
+                    {windowWidth > 1024 && (
+                        <nav className="flex items-center gap-4">
+                            <IconButton icon={Home} label="Home" onClick={() => navigate("/")} />
+                            <IconButton
+                                icon={Heart}
+                                label="Favorites"
+                                onClick={() => {
+                                    if (!isAuthorized) return setShowAuthGate(true);
+                                    setShowCreateHint(true);
+                                }}
+                            />
+                        </nav>
+                    )}
 
+                    {isAuthorized && (
+                        <IconButton icon={Bell} onClick={() => setShowNotifications(true)} />
+                    )}
 
-                {/* RIGHT: Notifications + Profile */}
-                <div className="flex items-center justify-between">
-
-                    <div className="flex items-center gap-4">
-                        {windowWidth > 1024 && (
-                            <nav className="flex items-center md:gap-1 lg:gap-6">
-                                <IconButton onClick={() => navigate("/")} icon={Home} label="Home" />
-                                <IconButton onClick={() => {
-                                    if (!isAuthorized) {
-                                        setShowAuthGate(true);
-                                        return;
-                                    } return setShowCreateHint(true);
-                                }} icon={Heart} label="Favorites" />
-                            </nav>
-                        )}
-                        {isAuthorized && <IconButton icon={Bell} />}
-                        <ProfileButton dropdownRef={dropdownRef} windowWidth={windowWidth} isAuthorized={isAuthorized} avatarUrl={avatarUrl} setShowLogout={setShowLogout} />
-                    </div>
-                    {/* CENTER: Mobile Dropdown */}
-
+                    <ProfileButton
+                        isAuthorized={isAuthorized}
+                        me={me}
+                        windowWidth={windowWidth}
+                        setShowLogout={setShowLogout}
+                    />
                 </div>
-
             </div>
         </header>
     );
@@ -282,151 +144,178 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode, setWantsToLogIn }) 
 
 export default TopBar;
 
-/* ---------------- Components ---------------- */
+/* ───────────────────────── Helpers ───────────────────────── */
 
 const IconButton = ({ icon: Icon, label, onClick }) => (
-    <button
-        className="
-            flex items-center gap-1
-            text-gray-300 hover:text-white
-            transition-colors
-        "
+    <motion.button
+        whileTap={{ scale: 0.95 }}
         onClick={onClick}
-        title={label}
+        className="flex items-center gap-1 text-gray-300 hover:text-white transition"
     >
         <Icon size={20} />
         {label && <span className="text-sm">{label}</span>}
-    </button>
+    </motion.button>
 );
 
-const DropdownItem = ({ icon: Icon, label }) => (
-    <button
-        className="
-            w-full flex items-center gap-3
-            px-4 py-3 text-sm
-            text-gray-300 hover:text-white
-            hover:bg-neutral-700
-            transition-colorstext-left
-            transition rounded-none
-        "
-    >
-        <Icon size={18} />
-        <span>{label}</span>
-    </button>
-);
+const DROPDOWN_VARIANTS = {
+    default: {
+        text: "text-gray-300 hover:text-white",
+        icon: "text-gray-400",
+    },
+    danger: {
+        text: "text-red-400 hover:text-red-300",
+        icon: "text-red-400",
+    },
+};
 
-const ProfileButton = ({ isAuthorized, avatarUrl, setShowLogout, dropdownRef, windowWidth }) => {
+const DropdownItem = ({ icon: Icon, label, variant = "default", rounded_top, rounded_bottom }) => {
+    const styles = DROPDOWN_VARIANTS[variant];
+    return (
+        <div
+            className={`w-full flex items-center gap-3 px-4 py-3 text-sm ${styles.text} hover:bg-neutral-800 transition-colors ${rounded_top ? "rounded-t-lg" : ""
+                } ${rounded_bottom ? "rounded-b-lg" : ""}`}
+        >
+            <Icon size={18} className={styles.icon} />
+            <span>{label}</span>
+        </div>
+    );
+};
+
+const ProfileButton = ({ isAuthorized, me, windowWidth, setShowLogout }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
     const navigate = useNavigate();
+    const reduce = useReducedMotion();
 
-    // Close on outside click
+    const avatarSrc = me?.avatar_url
+        ? `${me.avatar_url}?v=${me.avatar_changed_at}`
+        : null;
+
     useEffect(() => {
-        const handler = (e) => {
-            if (ref.current && !ref.current.contains(e.target)) {
-                setOpen(false);
-            }
+        const click = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) setOpen(false);
         };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
+        const esc = (e) => e.key === "Escape" && setOpen(false);
+        document.addEventListener("mousedown", click);
+        document.addEventListener("keydown", esc);
+        return () => {
+            document.removeEventListener("mousedown", click);
+            document.removeEventListener("keydown", esc);
+        };
     }, []);
 
     if (!isAuthorized) {
         return (
-            <div className="flex items-center gap-2">
-                <button
-                    className="flex items-center gap-1 text-gray-300 hover:text-white transition"
-                    onClick={() => (window.location.href = "/login")}
-                >
-                    <User size={20} />
-                    <span className="text-sm">Sign In</span>
-                </button>
-            </div>
+            <button
+                className="flex items-center gap-1 text-gray-300 hover:text-white"
+                onClick={() => { localStorage.setItem("redirectAfterLogin", window.location.pathname); navigate("/login"); }}
+            >
+                <User size={20} />
+                <span className="text-sm">Sign In</span>
+            </button>
         );
     }
 
     return (
         <div ref={ref} className="relative">
-            {/* Avatar button */}
-            <div
-                role="button"
-                tabIndex={0}
+            <motion.button
+                whileTap={reduce ? {} : { scale: 0.96 }}
                 onClick={() => setOpen((o) => !o)}
-                className="
-                    w-10 h-10 rounded-full cursor-pointer
-                    overflow-hidden flex items-center justify-center
-                    bg-gray-700 hover:ring-2 hover:ring-orange-500
-                    transition
-                "
+                className="flex items-center gap-3 rounded-full px-3 py-2 hover:bg-neutral-700/80 focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
-                {avatarUrl ? (
-                    <img
-                        src={avatarUrl}
-                        alt="Profile avatar"
-                        className="w-full h-full object-cover pointer-events-none"
-                        draggable={false}
-                    />
-                ) : (
-                    <User size={18} className="text-gray-300" />
-                )}
-            </div>
+                <div className="w-9 h-9 rounded-full overflow-hidden bg-neutral-700">
+                    {avatarSrc ? (
+                        <img src={avatarSrc} className="w-full h-full object-cover" />
+                    ) : (
+                        <User size={16} className="m-auto text-gray-300" />
+                    )}
+                </div>
 
-            {/* Dropdown */}
-            {open && (
-                <div
-                    className="
-                absolute right-0 mt-2 w-44
-                bg-neutral-900/95 backdrop-blur
-                border border-neutral-700
-                rounded-xl shadow-2xl z-50
-                overflow-hidden
-            "
-
-                >
-                    <button
-                        className="
-                            w-full px-4 py-2 text-left text-sm
-                            text-gray-200 hover:bg-neutral-800
-                            transition rounded-none
-                        "
-                        onClick={() => {
-                            setOpen(false);
-                            navigate("/profile");
-                        }}
-                    >
-                        Profile
-                    </button>
-                    {windowWidth < 1024 && <div className="relative text-white" ref={dropdownRef}>
-                        <div
-                            className="
-                                right-0 top-12
-                                border-y border-neutral-700
-                            "
-                        >
-                            <DropdownItem icon={Home} label="Home" />
-                            {windowWidth <= 600 && <DropdownItem icon={Search} label="Search" />}
-                            <DropdownItem icon={PlusCircle} label="Create" />
-                            <DropdownItem icon={Heart} label="Favorites" />
+                {windowWidth > 1024 && (
+                    <div className="text-left">
+                        <div className="text-xs text-neutral-400">Signed in as</div>
+                        <div className="text-sm font-semibold truncate max-w-[8rem]">
+                            {me?.username}
                         </div>
                     </div>
-                    }
-                    <button
-                        className="
-                            w-full px-4 py-2 text-left text-sm
-                            text-red-400 hover:bg-neutral-800
-                            transition flex items-center gap-2 rounded-none
-                        "
-                        onClick={() => {
-                            setOpen(false);
-                            setShowLogout(true);
-                        }}
+                )}
+            </motion.button>
 
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                        transition={{ duration: reduce ? 0 : 0.18 }}
+                        className="absolute right-0 mt-2 w-48 bg-black/95 border border-neutral-700 rounded-xl shadow-2xl z-50"
                     >
-                        <LogOut size={14} />
-                        Logout
-                    </button>
-                </div>
-            )}
+                        {windowWidth < 1024 && (
+                            <div className="flex flex-row items-center gap-3 px-4 py-3 text-left border-b border-neutral-700 pointer-events-none">
+                                <div className="w-9 h-9 rounded-full overflow-hidden bg-neutral-700">
+                                    {avatarSrc ? (
+                                        <img src={avatarSrc} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <User size={16} className="m-auto text-gray-300" />
+                                    )}
+                                </div>
+                                <div>
+                                    <div className="text-xs text-neutral-400">Signed in as</div>
+                                    <div className="text-sm font-semibold truncate max-w-[8rem]">
+                                        {me?.username}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <button
+                            onClick={() => {
+                                setOpen(false);
+                                navigate("/profile");
+                            }}
+                            className="w-full text-left border-b border-neutral-700"
+                        >
+                            <DropdownItem icon={User} label="Profile" rounded_top />
+                        </button>
+
+                        {windowWidth < 1024 && (
+                            <>
+                                <button className="w-full text-left" onClick={() => navigate("/")}>
+                                    <DropdownItem icon={Home} label="Home" />
+                                </button>
+
+                                {windowWidth <= 600 && (
+                                    <button className="w-full text-left">
+                                        <DropdownItem icon={Search} label="Search" />
+                                    </button>
+                                )}
+
+                                <button className="w-full text-left">
+                                    <DropdownItem icon={PlusCircle} label="Create" />
+                                </button>
+
+                                <button className="w-full text-left">
+                                    <DropdownItem icon={Heart} label="Favorites" />
+                                </button>
+                            </>
+                        )}
+
+                        <button
+                            onClick={() => {
+                                setOpen(false);
+                                setShowLogout(true);
+                            }}
+                            className="w-full text-left border-t border-neutral-700"
+                        >
+                            <DropdownItem
+                                icon={LogOut}
+                                label="Logout"
+                                variant="danger"
+                                rounded_bottom
+                            />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

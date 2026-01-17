@@ -1,28 +1,24 @@
-import React, { useState, useEffect, useRef } from "react";
+// MainAppLayout.jsx
+import React, { useEffect, useState, useRef } from "react";
 import { Toaster } from "react-hot-toast";
 import { Outlet, useNavigate } from "react-router-dom";
-
 import TopBar from "../components/TopBar";
 import NavBar from "../components/NavBar";
 import Footer from "../components/Footer";
 import LoadingScreen from "../components/LoadingAnimation";
-
-import { useContextProps } from "../features/Contexts";
 import { useContextManager } from "../features/ContextProvider";
 import { motion, AnimatePresence } from "framer-motion";
 import Login from "../pages/Login";
-import Register from "../pages/Register";
 import backendUrlV1 from "../urls/backendUrl";
 
 const MainAppLayout = () => {
     const navigate = useNavigate();
-    const [shouldExitAnimation, setShouldExitAnimation] = useState(false);
-
-    const { isLoading, setIsLoading, setIsAuthorized, isAuthorized, windowWidth, isNavOpen, setIsNavOpen, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister } =
+    const { isLoading, setIsLoading, setIsAuthorized, isAuthorized, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister } =
         useContextManager();
 
     const isOverlay = windowWidth < 1024;
-    const [navOpen, setNavOpen] = useState( windowWidth > 1024);
+    const [navOpen, setNavOpen] = useState(windowWidth > 1024);
+    const [shouldExitAnimation, setShouldExitAnimation] = useState(false);
     const navRef = useRef(null);
     const toggleBtnRef = useRef(null);
 
@@ -30,126 +26,97 @@ const MainAppLayout = () => {
 
     useEffect(() => {
         const handleResize = () => {
-            if (navOpen) {
-                setNavOpen(window.innerWidth > 1024);
-                if (window.innerWidth <= 1024);
-            }
+            setNavOpen((prev) => (window.innerWidth > 1024 ? true : prev && window.innerWidth > 1024));
         };
-
         handleResize();
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
     useEffect(() => {
-        if (isAuthorized) return;
-
         const checkAuth = async () => {
             try {
-                const res = await fetch(
-                    `${backendUrlV1}/auth/me`,
-                    { credentials: "include" }
-                );
-
-                if (res.ok) {
-                    setIsAuthorized(true);
-                } else {
-                    setIsAuthorized(false);
-                }
-            } catch (err) {
-                console.error("Auth check failed:", err);
+                const res = await fetch(`${backendUrlV1}/auth/me`, { credentials: "include" });
+                setIsAuthorized(res.ok);
+                console.log("Auth status:", res.ok);
+            } catch {
                 setIsAuthorized(false);
             } finally {
                 setIsLoading(false);
             }
         };
-
         checkAuth();
-    }, [isAuthorized]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
         <div className="min-h-screen flex flex-col bg-transparent">
-            {wantsToLogIn ?
+            {wantsToLogIn ? (
                 <Login setIsAuthorized={setIsAuthorized} setIsLoading={setIsLoading} />
-                : wantsToRegister ? <Register setWantsToLogIn={setWantsToLogIn} /> : (
-                    <>
-                        {/* Top Bar */}
-                        {/* TopBar spacer – prevents layout shift */}
-                        {shouldExitAnimation && <div style={{ height: TOPBAR_HEIGHT }} />}
-                        <TopBar
-                            setIsAuthorized={setIsAuthorized}
-                            toggleBtnRef={toggleBtnRef}
-                            isAuthorized={isAuthorized}
-                            windowWidth={windowWidth}
-                            setSidebarMode={setNavOpen}
-                            setWantsToLogIn={setWantsToLogIn}
-                        />
+            ) : wantsToRegister ? (
+                <Register setWantsToLogIn={() => setWantsToLogIn(true)} />
+            ) : (
+                <>
+                    {/* TopBar spacer – prevents layout shift */}
+                    {shouldExitAnimation && <div style={{ height: TOPBAR_HEIGHT }} />}
 
-                        {/* Main Content Area */}
-                        <div className="flex flex-1 relative">
-                            {/* BACKDROP (overlay only) */}
-                            {isOverlay && navOpen && (
-                                <div
-                                    className="fixed inset-0 bg-black/50 z-40"
-                                    onClick={() => setNavOpen(false)}
-                                />
-                            )}
+                    <TopBar
+                        setIsAuthorized={setIsAuthorized}
+                        toggleBtnRef={toggleBtnRef}
+                        isAuthorized={isAuthorized}
+                        windowWidth={windowWidth}
+                        setSidebarMode={setNavOpen}
+                    />
 
-                            {/* NAVBAR CONTAINER */}
-                            <div
-                                className={`
-            transition-all duration-300 ease-in-out w-0
-            ${isOverlay
-                                        ? "fixed inset-y-0 left-0 z-50"
-                                        : "relative"}
-        `}
-                            >
-                                <NavBar
-                                    setNavOpen={setNavOpen}
-                                    isLoading={isLoading}
-                                    isOpen={navOpen}
-                                    isOverlay={isOverlay}
-                                    navRef={navRef}
-                                    onNavigate={() => isOverlay && setNavOpen(false)}
-                                />
+                    <div className="flex flex-1 relative">
+                        {/* BACKDROP (overlay only) */}
+                        {isOverlay && navOpen && (
+                            <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setNavOpen(false)} />
+                        )}
+
+                        {/* NAVBAR CONTAINER (animated inside NavBar now) */}
+                        <div className={`${isOverlay ? "fixed inset-y-0 left-0 z-50" : "relative"} transition-all duration-300`}>
+                            <NavBar
+                                setNavOpen={setNavOpen}
+                                isOpen={navOpen}
+                                isOverlay={isOverlay}
+                                navRef={navRef}
+                                onNavigate={() => isOverlay && setNavOpen(false)}
+                            />
+                        </div>
+
+                        {/* MAIN CONTENT */}
+                        <main className={`flex-1 transition-all duration-300 ${!isOverlay && navOpen ? "ml-64" : "ml-0"}`}>
+                            <div>
+                                <Outlet />
                             </div>
+                        </main>
 
-                            {/* MAIN CONTENT */}
-                            <AnimatePresence>
+                        {/* Loader overlay (blocks interaction until it exits) */}
+                        <AnimatePresence>
+                            {!shouldExitAnimation && (
                                 <motion.div
-                                    key="loader"
-                                    className="
-                            absolute inset-x-0 top-0
-                            h-screen
-                            z-40
-                            pointer-events-none
-                        "
+                                    key="loader-overlay"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="absolute inset-0 z-50 pointer-events-auto"
                                 >
-                                    <LoadingScreen shouldExit={shouldExitAnimation} setShouldExit={setShouldExitAnimation} isLoading={isLoading} />
+                                    <LoadingScreen isLoading={isLoading} shouldExit={shouldExitAnimation} setShouldExit={setShouldExitAnimation} />
                                 </motion.div>
-                            </AnimatePresence>
-                            {!(!shouldExitAnimation || shouldExitAnimation) ? null : <main
-                                className={`
-            flex-1 transition-all duration-300
-            ${!isOverlay && navOpen ? "ml-64" : "ml-0"}
-        `}
-                            >
-                                <div className="p-4">
-                                    <Outlet />
-                                </div>
-                            </main>}
-                        </div>
+                            )}
+                        </AnimatePresence>
+                    </div>
 
-                        {/* Toasts */}
-                        <div className="absolute right-4 top-4 z-50">
-                            <Toaster position="top-right" />
-                        </div>
+                    {/* Toasts */}
+                    <div className="absolute right-4 top-4 z-50">
+                        <Toaster position="top-right" />
+                    </div>
 
-                        {/* Footer */}
-                        {shouldExitAnimation && <Footer navOverlay={isOverlay} navOpen={navOpen} isAuthorized={isAuthorized} />}
-                    </>
-                )
-            }
+                    {/* Footer */}
+                    {shouldExitAnimation && <Footer navOverlay={isOverlay} navOpen={navOpen} isAuthorized={isAuthorized} />}
+                </>
+            )}
         </div>
     );
 };

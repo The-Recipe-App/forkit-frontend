@@ -2,41 +2,43 @@ import Logo from "../features/Logo";
 
 const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
     return (
-        <footer className={`${!navOverlay && navOpen ? "ml-64" : "ml-0"} transition-all duration-300 bg-[#18181B] text-gray-400 text-sm`}>
-            <div className="max-w-full mx-auto py-5">
-                {/* Top Grid */}
-                <div className="grid grid-cols-1 px-6 md:grid-cols-5 gap-8 border-b border-gray-700 pb-8">
+        <footer
+            className={`
+                ${!navOverlay && navOpen ? "ml-64" : "ml-0"}
+                transition-all duration-300
+                bg-gradient-to-b from-[#18181B] to-[#121214]
+                text-gray-400
+            `}
+        >
+            <div className="max-w-full mx-auto">
 
-                    {/* Brand */}
-                    <div className="md:col-span-2">
-                        <Logo
-                            width={300}
-                            src="/footer_logo.svg"
-                            alt="Forkit logo"
-                        />
-                        <p className="text-gray-500 leading-relaxed mt-2">
-                            A community-driven platform to cook, share,
-                            and evolve recipes together.
-                        </p>
-                    </div>
+                {/* ===== Top Section ===== */}
+                <div className="px-6 pt-14 pb-12">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-10">
 
-                    {/* Explore */}
-                    <nav aria-label="Explore">
-                        <h4 className="text-white font-medium mb-3">Explore</h4>
-                        <ul className="space-y-2">
+                        {/* Brand */}
+                        <div className="md:col-span-2 space-y-4">
+                            <Logo
+                                width={280}
+                                src="/footer_logo.svg"
+                                alt="Forkit logo"
+                            />
+                            <p className="text-gray-500 leading-relaxed max-w-md">
+                                A community-driven platform to cook, share,
+                                and evolve recipes together, openly and collaboratively.
+                            </p>
+                        </div>
+
+                        {/* Explore */}
+                        <FooterSection title="Explore">
                             <FooterLink href="/recipes" label="Browse Recipes" />
                             {isAuthorized && <FooterLink href="/recipes/new" label="Create Recipe" />}
                             {isAuthorized && <FooterLink href="/favorites" label="Favorites" />}
                             {isAuthorized && <FooterLink href="/changelogs" label="Changelogs" />}
-                        </ul>
-                    </nav>
+                        </FooterSection>
 
-                    {/* Community */}
-                    <nav aria-label="Community">
-                        <h4 className="text-white font-medium mb-3">
-                            Forkit Dev Community
-                        </h4>
-                        <ul className="space-y-4">
+                        {/* Community */}
+                        <FooterSection title="Community">
                             <FooterLink
                                 href="https://github.com/The-Recipe-App/Forkit/blob/main/README.md"
                                 label="READMEs"
@@ -48,43 +50,65 @@ const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
                                 external
                             />
                             <FooterLink href="/contribute" label="Contribute" />
-                        </ul>
-                    </nav>
+                        </FooterSection>
 
-                    {/* Legal */}
-                    <nav aria-label="Legal">
-                        <h4 className="text-white font-medium mb-3">Legal</h4>
-                        <ul className="space-y-4">
+                        {/* Legal */}
+                        <FooterSection title="Legal">
                             <FooterLink
                                 href="https://github.com/The-Recipe-App/Forkit/blob/main/LICENSE"
-                                label="License (AGPL-3.0)"
+                                label="AGPL-3.0 License"
                                 external
                             />
-                            <FooterLink href="/privacy" external label="Privacy Policy" />
-                            <FooterLink href="/terms" external label="Terms of Use" />
-                        </ul>
-                    </nav>
+                            <FooterLink href="/privacy" label="Privacy Policy" />
+                            <FooterLink href="/terms" label="Terms of Use" />
+                        </FooterSection>
+                    </div>
                 </div>
 
-                {/* Bottom Bar */}
-                <div className="flex px-6 flex-col md:flex-row items-center justify-between mt-6 gap-4">
-                    <p className="text-gray-500 text-center md:text-left">
-                        An open-source project ·{" "}
-                        <a
-                            href="https://github.com/The-Recipe-App/Forkit/blob/main/LICENSE"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:text-white underline"
-                        >
-                            Licensed under AGPL-3.0
-                        </a>{" "}
-                        · Forkit
-                    </p>
-
-                    <p className="text-gray-500 text-center md:text-right">
-                        © 2026 Forkit · Built with ❤️
-                    </p>
+                {/* ===== Divider ===== */}
+                <div className="px-6">
+                    <div className="h-px bg-gradient-to-r from-transparent via-orange-500 to-transparent" />
                 </div>
+
+                {/* ===== Bottom Section ===== */}
+                <div className="px-6 py-10">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-10">
+
+                        {/* Identity */}
+                        <div className="text-center md:text-left space-y-2">
+                            <p className="text-sm text-gray-500">
+                                Open-source software ·{" "}
+                                <a
+                                    href="https://github.com/The-Recipe-App/Forkit/blob/main/LICENSE"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hover:text-white underline underline-offset-4"
+                                >
+                                    AGPL-3.0 Licensed
+                                </a>
+                            </p>
+                            <p className="text-xs text-gray-600">
+                                © 2026 Forkit · <p className="inline text-orange-500 opacity-85">For cooks who wants to share, adapt, and improve recipes together</p>
+                            </p>
+                        </div>
+
+                        {/* Tech Stack */}
+                        <div className="flex flex-col items-center md:items-end gap-3">
+                            <span className="text-[11px] text-end w-full uppercase tracking-widest text-gray-600">
+                                Built with
+                            </span>
+                            <div className="h-px w-full bg-gradient-to-r from-transparent to-neutral-500 " />
+                            <div className="flex flex-wrap justify-center md:justify-end gap-2">
+                                <TechBadge label="React" href="https://react.dev" />
+                                <TechBadge label="Tailwind CSS" href="https://tailwindcss.com" />
+                                <TechBadge label="FastAPI" href="https://fastapi.tiangolo.com" />
+                                <TechBadge label="Python" href="https://www.python.org" />
+                                <TechBadge label="PostgreSQL" href="https://www.postgresql.org" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </footer>
     );
@@ -92,7 +116,16 @@ const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
 
 export default Footer;
 
-/* --------- Helper --------- */
+const FooterSection = ({ title, children }) => (
+    <nav aria-label={title} className="space-y-4">
+        <h4 className="text-white font-medium tracking-wide">
+            {title}
+        </h4>
+        <ul className="space-y-2">
+            {children}
+        </ul>
+    </nav>
+);
 
 const FooterLink = ({ href, label, external = false }) => (
     <li>
@@ -100,9 +133,38 @@ const FooterLink = ({ href, label, external = false }) => (
             href={href}
             target={external ? "_blank" : undefined}
             rel={external ? "noopener noreferrer" : undefined}
-            className="text-gray-400 hover:text-white transition-colors "
+            className="
+                text-gray-400
+                hover:text-white
+                transition-colors
+            "
         >
             {label}
         </a>
     </li>
+);
+
+const TechBadge = ({ label, href }) => (
+    <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="
+            rounded-full
+            border border-gray-700/70
+            bg-gray-900/40
+            px-3 py-1
+            text-[11px]
+            font-medium
+            text-gray-400
+            hover:text-white
+            hover:border-gray-500
+            hover:bg-gray-800
+            hover:-translate-y-0.5
+            transition-all
+            duration-200
+        "
+    >
+        {label}
+    </a>
 );

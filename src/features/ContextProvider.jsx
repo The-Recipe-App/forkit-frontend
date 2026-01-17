@@ -10,9 +10,9 @@ export const ContextProvider = ({ children }) => {
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
     const [wantsToLogIn, setWantsToLogIn] = useState(false);
     const [wantsToRegister, setWantsToRegister] = useState(false);
+    const [userName, setUserName] = useState("");
     const location = useLocation();
     const [recipes, setRecipes] = useState([]);
-    const[isNavOpen, setIsNavOpen] = useState(() => (typeof window !== "undefined" ? windowWidth > 1024 : true));
     // useEffect(() => {
     //     const timer = setTimeout(() => setIsLoading(false), 8000);
     //     return () => clearTimeout(timer);
@@ -51,7 +51,7 @@ export const ContextProvider = ({ children }) => {
 
 
     return (
-        <AppContext.Provider value={{ isLoading, setIsLoading, /*setPageTitle,*/ isAuthorized, setIsAuthorized, role, setRole, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister, recipes, setRecipes }}>
+        <AppContext.Provider value={{ isLoading, setIsLoading, /*setPageTitle,*/ isAuthorized, setIsAuthorized, role, setRole, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister, recipes, setRecipes, userName, setUserName }}>
             {children}
         </AppContext.Provider>
     );

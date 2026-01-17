@@ -3,6 +3,7 @@ import Logo from "../features/Logo";
 import { useAuth } from "../features/auth/useAuth";
 import {loginWithPassword, getCurrentUser} from "../features/auth/authApi";
 import { useNavigate } from "react-router-dom";
+import { useContextManager } from "../features/ContextProvider";
 
 function Login({ setIsAuthorized, setIsLoading }) {
     const [email, setEmail] = useState("");
@@ -10,8 +11,6 @@ function Login({ setIsAuthorized, setIsLoading }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const navigate = useNavigate();
-
-    const { login } = useAuth();
 
     /* ─────────────────────────
        Email / Password Login

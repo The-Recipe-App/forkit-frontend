@@ -2,221 +2,92 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Base
+============================================================ */
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgb(255, 255, 255);
-  /* background-color: #0e1012; */
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-#root {
-  min-width: 100%;
-  min-height: 100vh;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-svg image {
-  pointer-events: none;
-}
-svg {
-  filter: contrast(1.001);
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  width: 100%;
-  min-height: 100vh;
+  color-scheme: dark;
   color: white;
-  /* background-color: #131111; */
-  background-color: #000;
 }
 
-html {
-  scroll-behavior: smooth;
+html,
+body,
+#root {
   min-height: 100vh;
   background: #000;
+  margin: 0;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: border-color 0.25s;
-  outline: none;
-}
-
-
-button:focus,
-button:focus-visible {
-  outline: none;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-
-  a:hover {
-    color: #747bff;
-  }
-
-  button {
-    background-color: #f9f9f9;
-  }
-}
-
-
-/* JUMP ANIMATION */
-.pl1123__ring {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  animation: ringA 2s linear infinite;
-}
-
-.pl1123__ring--a {
-  animation-name: ringA;
-}
-
-.pl1123__ring--b {
-  animation-name: ringB;
-}
-
-.pl1123__ring--c {
-  animation-name: ringC;
-}
-
-.pl1123__ring--d {
-  animation-name: ringD;
-}
-
-/* Ring A */
-@keyframes ringA {
-  0%, 4% { stroke-dasharray: 0 660; stroke-width: 20; stroke-dashoffset: -330; }
-  12% { stroke-dasharray: 60 600; stroke-width: 30; stroke-dashoffset: -335; }
-  32% { stroke-dasharray: 60 600; stroke-width: 30; stroke-dashoffset: -595; }
-  40%, 54% { stroke-dasharray: 0 660; stroke-width: 20; stroke-dashoffset: -660; }
-  62% { stroke-dasharray: 60 600; stroke-width: 30; stroke-dashoffset: -665; }
-  82% { stroke-dasharray: 60 600; stroke-width: 30; stroke-dashoffset: -925; }
-  90%, 100% { stroke-dasharray: 0 660; stroke-width: 20; stroke-dashoffset: -990; }
-}
-
-/* Ring B */
-@keyframes ringB {
-  0%, 12% { stroke-dasharray: 0 220; stroke-width: 20; stroke-dashoffset: -110; }
-  20% { stroke-dasharray: 20 200; stroke-width: 30; stroke-dashoffset: -115; }
-  40% { stroke-dasharray: 20 200; stroke-width: 30; stroke-dashoffset: -195; }
-  48%, 62% { stroke-dasharray: 0 220; stroke-width: 20; stroke-dashoffset: -220; }
-  70% { stroke-dasharray: 20 200; stroke-width: 30; stroke-dashoffset: -225; }
-  90% { stroke-dasharray: 20 200; stroke-width: 30; stroke-dashoffset: -305; }
-  98%, 100% { stroke-dasharray: 0 220; stroke-width: 20; stroke-dashoffset: -330; }
-}
-
-/* Ring C */
-@keyframes ringC {
-  0% { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: 0; }
-  8% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -5; }
-  28% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -175; }
-  36%, 58% { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: -220; }
-  66% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -225; }
-  86% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -395; }
-  94%, 100% { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: -440; }
-}
-
-/* Ring D */
-@keyframes ringD {
-  0%, 8% { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: 0; }
-  16% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -5; }
-  36% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -175; }
-  44%, 50% { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: -220; }
-  58% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -225; }
-  78% { stroke-dasharray: 40 400; stroke-width: 30; stroke-dashoffset: -395; }
-  86%, 100% { stroke-dasharray: 0 440; stroke-width: 20; stroke-dashoffset: -440; }
-}
-/* JUMP ANIMATION */
-
-
-
-/* ───────────────────────── Forkit Scrollbar ───────────────────────── */
+/* ============================================================
+   Forkit Scrollbar
+============================================================ */
 
 .forkit-scroll {
-  scrollbar-width: thin;                /* Firefox */
+  scrollbar-width: thin;
   scrollbar-color: rgb(90 90 90) transparent;
 }
 
-/* WebKit (Chrome, Edge, Safari) */
 .forkit-scroll::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
-}
-
-.forkit-scroll::-webkit-scrollbar-track {
-  background: transparent;
-  margin: 4px 0;                        /* breathing room top/bottom */
 }
 
 .forkit-scroll::-webkit-scrollbar-thumb {
-  background-color: rgb(70 70 70);
+  background: rgb(70 70 70);
   border-radius: 999px;
-  border: 2px solid transparent;        /* creates floating effect */
-  background-clip: content-box;
-  transition: background-color 0.2s ease;
 }
 
-.forkit-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(110 110 110);
-  cursor: pointer;
+/* ============================================================
+   COMPONENTS (Tailwind @apply only)
+============================================================ */
+
+@layer components {
+  .surface {
+    @apply bg-white/[0.035] border border-white/10 rounded-3xl;
+  }
+
+  .surface-soft {
+    @apply bg-white/[0.025] border border-white/5 rounded-2xl;
+  }
+
+  .input-dark {
+    @apply w-full bg-white/[0.04] border border-white/10 rounded-xl
+           px-4 py-3 text-sm text-zinc-200 placeholder-zinc-500
+           focus:outline-none focus:border-orange-500/70
+           focus:ring-4 focus:ring-orange-500/20 transition;
+  }
+
+  .btn-primary {
+    @apply bg-orange-500 text-black font-semibold
+           px-5 py-2.5 rounded-xl
+           hover:bg-orange-400 transition;
+  }
+
+  .btn-ghost {
+    @apply text-zinc-300 hover:text-white
+           px-4 py-2 rounded-xl
+           bg-white/[0.03] hover:bg-white/[0.06]
+           border border-white/10 transition;
+  }
 }
 
-/* Scrollbar buttons (subtle, modern arrows) */
-.forkit-scroll::-webkit-scrollbar-button:single-button {
-  height: 10px;
-  background-color: transparent;
-  background-repeat: no-repeat;
-  background-position: center;
-  opacity: 0.4;
+/* ============================================================
+   Animations
+============================================================ */
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.forkit-scroll::-webkit-scrollbar-button:hover {
-  opacity: 0.9;
-}
-
-/* Up arrow */
-.forkit-scroll::-webkit-scrollbar-button:single-button:vertical:decrement {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='rgb(200,200,200)' d='M12 8l-6 6h12z'/%3E%3C/svg%3E");
-}
-
-/* Down arrow */
-.forkit-scroll::-webkit-scrollbar-button:single-button:vertical:increment {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='rgb(200,200,200)' d='M12 16l6-6H6z'/%3E%3C/svg%3E");
+.animate-fadeUp {
+  animation: fadeUp 0.5s ease-out forwards;
 }

@@ -105,8 +105,6 @@ export async function getCurrentUser() {
  * Logout (server clears cookie)
  */
 export async function logout() {
-    localStorage.removeItem("redirectAfterLogin");
-    //localStorage.removeItem("avatarUrl");
     const res = await fetch(`${backendUrlV1}/auth/logout`, {
         method: "POST",
         credentials: "include",

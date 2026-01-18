@@ -190,8 +190,11 @@ const ProfileButton = ({ isAuthorized, me, windowWidth, setShowLogout }) => {
     const reduce = useReducedMotion();
 
     const avatarSrc = me?.avatar_url
-        ? `${me.avatar_url}?v=${me.avatar_changed_at}`
+    ? `${me.avatar_url}?v=${me.avatar_changed_at ?? ""}`
+    : me?.username
+        ? `https://ui-avatars.com/api/?name=${encodeURIComponent(me.username)}`
         : null;
+
 
     useEffect(() => {
         const click = (e) => {

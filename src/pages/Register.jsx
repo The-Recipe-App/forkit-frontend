@@ -229,7 +229,7 @@ export default function Register() {
 
         {stage === "password" && (
           <form onSubmit={handleRegister} className="space-y-4 mt-6">
-            <div className="text-sm text-gray-300 text-center">Email verified — finish set up</div>
+            <div className="text-sm text-green-300 text-center">Email verified - finish set up</div>
 
             <div className="relative">
               <input

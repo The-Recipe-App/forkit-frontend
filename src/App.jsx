@@ -13,7 +13,6 @@ import Register from "./pages/Register";
 import Recipes from "./pages/Recipes";
 import RecipeDetail from "./pages/RecipeDetail";
 import ForkEditor from "./pages/ForkEditor";
-import ForkitProfilePage from "./pages/ForkitProfilePage";
 import ProfileDashboard from "./pages/ProfileDashboard";
 
 function App() {

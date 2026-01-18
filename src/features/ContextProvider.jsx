@@ -1,10 +1,10 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const AppContext = createContext();
 
 export const ContextProvider = ({ children }) => {
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [isAuthorized, setIsAuthorized] = useState(false);
     const [role, setRole] = useState(null);
     const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -13,6 +13,9 @@ export const ContextProvider = ({ children }) => {
     const [userName, setUserName] = useState("");
     const location = useLocation();
     const [recipes, setRecipes] = useState([]);
+
+    const navigate = useNavigate();
+
     // useEffect(() => {
     //     const timer = setTimeout(() => setIsLoading(false), 8000);
     //     return () => clearTimeout(timer);
@@ -26,15 +29,22 @@ export const ContextProvider = ({ children }) => {
 
     useEffect(() => {
         if (location.pathname === "/login") {
-            setWantsToLogIn(true);
+            if (!isAuthorized) { 
+                setWantsToLogIn(true);
+            } else {
+                setWantsToLogIn(false);
+                navigate("/", { replace: true });
+            }
         } else {
             setWantsToLogIn(false);
-        } if (location.pathname === "/register") {
+        }
+    
+        if (location.pathname === "/register") {
             setWantsToRegister(true);
         } else {
             setWantsToRegister(false);
         }
-    }, [location]);
+    }, [location, isAuthorized, navigate]);
 
     useEffect(() => {
         const handleResize = () => {

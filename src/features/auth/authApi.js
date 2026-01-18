@@ -1,13 +1,13 @@
+import { useQueryClient } from "@tanstack/react-query";
 import backendUrlV1 from "../../urls/backendUrl";
+import { useContextManager } from "../ContextProvider";
 
 /* -------------------------
    Helpers
 ------------------------- */
 
 function jsonHeaders() {
-    return {
-        "Content-Type": "application/json",
-    };
+    return { "Content-Type": "application/json" };
 }
 
 async function parseJsonSafe(res) {
@@ -20,99 +20,92 @@ async function parseJsonSafe(res) {
 
 function extractErrorMessage(data, fallback) {
     if (!data) return fallback;
-
-    if (typeof data.detail === "string") {
-        return data.detail;
-    }
-
-    if (Array.isArray(data.detail)) {
-        return data.detail.map(d => d.msg).join(", ");
-    }
-
+    if (typeof data.detail === "string") return data.detail;
+    if (Array.isArray(data.detail)) return data.detail.map(d => d.msg).join(", ");
     return fallback;
 }
 
 /* -------------------------
-   Auth APIs
+   Central Auth Hook
 ------------------------- */
 
-/**
- * Login (cookie-based)
- */
-export async function loginWithPassword(email, password) {
-    const res = await fetch(`${backendUrlV1}/auth/login`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-    });
+export function useAuthApi() {
+    const { setIsLoading } = useContextManager();
 
+    const queryClient = useQueryClient();
 
-    const data = await parseJsonSafe(res);
-
-    if (!res.ok) {
-        throw new Error(
-            extractErrorMessage(data, "Invalid credentials")
-        );
+    async function withLoading(fn) {
+        try {
+            setIsLoading(true);
+            return await fn();
+        } finally {
+            setIsLoading(false);
+        }
     }
 
-    // backend sets cookie, response body is minimal
-    return data;
-}
+    function loginWithPassword(email, password) {
+        return withLoading(async () => {
+            try {
+                const res = await fetch(`${backendUrlV1}/auth/login`, {
+                    method: "POST",
+                    credentials: "include",
+                    headers: jsonHeaders(),
+                    body: JSON.stringify({ email, password }),
+                });
 
-/**
- * Register (cookie-based)
- */
-export async function registerWithPassword(email, password, username = null) {
-    const res = await fetch(`${backendUrlV1}/auth/register`, {
-        method: "POST",
-        headers: jsonHeaders(),
-        credentials: "include",
-        body: JSON.stringify({
-            email,
-            password,
-            username,
-        }),
-    });
-
-    const data = await parseJsonSafe(res);
-
-    if (!res.ok) {
-        throw new Error(
-            extractErrorMessage(data, "Registration failed")
-        );
+                const data = await parseJsonSafe(res);
+                if (!res.ok) throw new Error(extractErrorMessage(data, "Invalid credentials"));
+                window.location.replace(localStorage.getItem("redirectAfterLogin") || "/");
+            } catch (err) {
+                throw err;
+            }
+        });
     }
 
-    return data;
-}
+    function registerWithPassword(email, password, username = null) {
+        return withLoading(async () => {
+            const res = await fetch(`${backendUrlV1}/auth/register`, {
+                method: "POST",
+                credentials: "include",
+                headers: jsonHeaders(),
+                body: JSON.stringify({ email, password, username }),
+            });
 
-/**
- * Get current user (from cookie)
- */
-export async function getCurrentUser() {
-    const res = await fetch(`${backendUrlV1}/auth/me`, {
-        credentials: "include",
-    });
-
-    if (!res.ok) {
-        return null;
+            const data = await parseJsonSafe(res);
+            if (!res.ok) throw new Error(extractErrorMessage(data, "Registration failed"));
+            return data;
+        });
     }
 
-    return res.json();
-}
+    function getCurrentUser() {
+        return withLoading(async () => {
+            const res = await fetch(`${backendUrlV1}/auth/me`, {
+                credentials: "include",
+            });
 
-/**
- * Logout (server clears cookie)
- */
-export async function logout() {
-    const res = await fetch(`${backendUrlV1}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-    });
-
-    if (!res.ok) {
-        throw new Error("Logout failed");
+            if (!res.ok) return null;
+            return res.json();
+        });
     }
 
-    window.location.reload();
+    function logout() {
+        return withLoading(async () => {
+            const res = await fetch(`${backendUrlV1}/auth/logout`, {
+                method: "POST",
+                credentials: "include",
+            });
+
+            if (!res.ok) throw new Error("Logout failed");
+            queryClient.removeQueries({ queryKey: ["profile", "me"] });
+            queryClient.clear();
+            window.location.reload();
+        });
+    }
+
+    return {
+        loginWithPassword,
+        registerWithPassword,
+        getCurrentUser,
+        logout,
+    };
 }

@@ -1,67 +1,49 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Logo from "../features/Logo";
-import { useAuth } from "../features/auth/useAuth";
-import {loginWithPassword, getCurrentUser} from "../features/auth/authApi";
+import { useAuthApi } from "../features/auth/authApi";
 import { useNavigate } from "react-router-dom";
-import { useContextManager } from "../features/ContextProvider";
+import { useMe } from "../hooks/useMe";
 
-function Login({ setIsAuthorized, setIsLoading }) {
+function Login() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const navigate = useNavigate();
 
-    /* ─────────────────────────
-       Email / Password Login
-    ───────────────────────── */
+    const { loginWithPassword } = useAuthApi();
+    const { data: me, isLoading: meLoading } = useMe();
+
+    // If already authenticated (or becomes authenticated after login), redirect
+    useEffect(() => {
+        if (me) {
+            const redirect = localStorage.getItem("redirectAfterLogin");
+            if (redirect) {
+                navigate(redirect);
+                localStorage.removeItem("redirectAfterLogin");
+            } else {
+                navigate("/");
+            }
+        }
+    }, [me, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError("");
-        //setIsLoading(true);
         setLoading(true);
-    
+
         try {
-            // ✅ correct function
             await loginWithPassword(email, password);
-    
-            // ✅ verify session from backend
-            const me = await getCurrentUser();
-            if (!me) {
-                throw new Error("Session verification failed");
-            }
-    
-            setIsAuthorized(true);
-            if (localStorage.getItem("redirectAfterLogin")) {
-                navigate(localStorage.getItem("redirectAfterLogin"));
-                localStorage.removeItem("redirectAfterLogin");
-            } else navigate("/");
         } catch (err) {
             setError(err.message || "Invalid email or password.");
         } finally {
-            setIsLoading(false);
             setLoading(false);
         }
     };
-    
-
-    /* ─────────────────────────
-       Render
-    ───────────────────────── */
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-[#0f0f0f]">
-            <div
-                className="
-                    w-full sm:max-w-md max-w-[80%]
-                    rounded-2xl
-                    bg-white/5 backdrop-blur
-                    border border-white/10
-                    shadow-xl
-                    p-8
-                "
-            >
+            <div className="w-full sm:max-w-md max-w-[80%] rounded-2xl bg-white/5 backdrop-blur border border-white/10 shadow-xl p-8">
                 {/* Logo */}
                 <div className="flex justify-center mb-6">
                     <Logo width={140} />
@@ -74,7 +56,6 @@ function Login({ setIsAuthorized, setIsLoading }) {
                     Log in to continue evolving recipes together.
                 </p>
 
-                {/* Error */}
                 {error && (
                     <div className="mt-4 text-sm text-red-400 text-center">
                         {error}
@@ -88,16 +69,7 @@ function Login({ setIsAuthorized, setIsLoading }) {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        className="
-                            w-full px-4 py-2.5
-                            rounded-lg
-                            bg-neutral-900
-                            border border-gray-700
-                            text-white
-                            placeholder-gray-500
-                            focus:outline-none
-                            focus:border-orange-500
-                        "
+                        className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500"
                     />
 
                     <input
@@ -106,29 +78,13 @@ function Login({ setIsAuthorized, setIsLoading }) {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
-                        className="
-                            w-full px-4 py-2.5
-                            rounded-lg
-                            bg-neutral-900
-                            border border-gray-700
-                            text-white
-                            placeholder-gray-500
-                            focus:outline-none
-                            focus:border-orange-500
-                        "
+                        className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500"
                     />
 
                     <button
                         type="submit"
-                        disabled={loading}
-                        className="
-                            w-full py-2.5
-                            rounded-lg
-                            bg-orange-600 hover:bg-orange-500
-                            text-white font-medium
-                            transition
-                            disabled:opacity-50
-                        "
+                        disabled={loading || meLoading}
+                        className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition disabled:opacity-50"
                     >
                         {loading ? "Logging in…" : "Log in"}
                     </button>

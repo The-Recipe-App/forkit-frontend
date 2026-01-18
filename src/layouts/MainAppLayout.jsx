@@ -11,9 +11,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
 import backendUrlV1 from "../urls/backendUrl";
+import { useMe } from "../hooks/useMe";
 
 const MainAppLayout = () => {
-    const navigate = useNavigate();
+    const { data: me, isLoading: meLoading, isError } = useMe();
     const { isLoading, setIsLoading, setIsAuthorized, isAuthorized, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister } =
         useContextManager();
 
@@ -26,6 +27,15 @@ const MainAppLayout = () => {
     const TOPBAR_HEIGHT = "3.875rem";
 
     useEffect(() => {
+        if (me) {
+            setIsAuthorized(true);
+        } else if (isError) {
+            setIsAuthorized(false);
+        }
+        setIsLoading(meLoading);
+    }, [me, isError, meLoading]);
+
+    useEffect(() => {
         const handleResize = () => {
             setNavOpen((prev) => (window.innerWidth > 1024 ? true : prev && window.innerWidth > 1024));
         };
@@ -35,23 +45,31 @@ const MainAppLayout = () => {
     }, []);
 
     useEffect(() => {
-        const checkAuth = async () => {
-            try {
-                const res = await fetch(`${backendUrlV1}/auth/me`, { credentials: "include" });
-                setIsAuthorized(res.ok);
-                console.log("Auth status:", res.ok);
-            } catch {
-                setIsAuthorized(false);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        checkAuth();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        setIsAuthorized(!!me);
     }, []);
+
+    useEffect(() => {
+        if (isLoading) {
+            setShouldExitAnimation(false);
+        }
+    }, [isLoading]);
+    
 
     return (
         <div className="min-h-screen flex flex-col bg-transparent">
+            <AnimatePresence>
+                {!shouldExitAnimation && (
+                    <motion.div
+                        key="loader-overlay"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-50 pointer-events-auto"
+                    >
+                        <LoadingScreen isLoading={isLoading} shouldExit={shouldExitAnimation} setShouldExit={setShouldExitAnimation} />
+                    </motion.div>
+                )}
+            </AnimatePresence>
             {wantsToLogIn ? (
                 <Login setIsAuthorized={setIsAuthorized} setIsLoading={setIsLoading} />
             ) : wantsToRegister ? (
@@ -92,21 +110,6 @@ const MainAppLayout = () => {
                                 <Outlet />
                             </div>
                         </main>
-
-                        {/* Loader overlay (blocks interaction until it exits) */}
-                        <AnimatePresence>
-                            {!shouldExitAnimation && (
-                                <motion.div
-                                    key="loader-overlay"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="absolute inset-0 z-50 pointer-events-auto"
-                                >
-                                    <LoadingScreen isLoading={isLoading} shouldExit={shouldExitAnimation} setShouldExit={setShouldExitAnimation} />
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
                     </div>
 
                     {/* Toasts */}

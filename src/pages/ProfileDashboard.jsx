@@ -1,9 +1,10 @@
-// ProfileDashboard.jsx
-import React, { useEffect, useState, useRef, useMemo } from "react";
+
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Navigate, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import backendUrlV1 from "../urls/backendUrl";
 import { useMe } from "../hooks/useMe";
+import Cropper from "react-easy-crop";
 
 /* ------------------------- Utility: debounce hook ------------------------- */
 function useDebounced(value, ms = 400) {
@@ -36,13 +37,13 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
             return;
         }
 
-        // Format check first (client-side fast fail)
+        
         if (!USERNAME_RE.test(debounced)) {
             setStatus("invalid");
             return;
         }
 
-        // Abort previous
+        
         controller.current?.abort();
         const ctrl = new AbortController();
         controller.current = ctrl;
@@ -50,7 +51,7 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
         let mounted = true;
         setStatus("checking");
 
-        // Use GET /profile/{username} to infer availability
+        
         fetch(`${backendUrlV1}/profile/${encodeURIComponent(debounced)}`, {
             method: "GET",
             credentials: "include",
@@ -66,12 +67,12 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
                     setStatus("taken");
                     return;
                 }
-                // treat other statuses as unknown
+                
                 setStatus(null);
             })
             .catch((err) => {
                 if (err.name === "AbortError") return;
-                // network error -> no status
+                
                 setStatus(null);
             });
 
@@ -110,7 +111,7 @@ function BadgesList({ badges = [] }) {
 
 /* ------------------------- Reputation bar ------------------------- */
 function ReputationBar({ rep = {} }) {
-    // rep: { score: number, level: string, next_level?, progress_pct? }
+    
     const pct = Math.max(0, Math.min(100, rep.progress_pct ?? 0));
     return (
         <div className="bg-white/5 p-4 rounded-xl">
@@ -137,7 +138,7 @@ function ActivityFeed({ username }) {
         enabled: Boolean(username),
         queryFn: async () => {
             const res = await fetch(`${backendUrlV1}/profile/${encodeURIComponent(username)}/activity`, { credentials: "include" });
-            // If endpoint doesn't exist or returns non-ok, don't throw so UI can gracefully show "not available"
+            
             if (!res.ok) return [];
             return res.json();
         },
@@ -168,12 +169,28 @@ const TWITTER_RE = /^[A-Za-z0-9_]{0,15}$/;
 
 function EditProfileModal({ open, onClose, user }) {
     const qc = useQueryClient();
-    const [form, setForm] = useState({ username: user.username, bio: user.bio || "", location: user.location || "", website: user.website || "", twitter: user.twitter || "" });
+    const navigate = useNavigate();
+
+    const [form, setForm] = useState({
+        username: user.username,
+        bio: user.bio || "",
+        location: user.location || "",
+        website: user.website || "",
+        twitter: user.twitter || "",
+    });
     const [serverError, setServerError] = useState(null);
+
+    const originalUsername = user.username;
 
     useEffect(() => {
         if (!open) return;
-        setForm({ username: user.username, bio: user.bio || "", location: user.location || "", website: user.website || "", twitter: user.twitter || "" });
+        setForm({
+            username: user.username,
+            bio: user.bio || "",
+            location: user.location || "",
+            website: user.website || "",
+            twitter: user.twitter || "",
+        });
         setServerError(null);
     }, [open, user.username, user.bio, user.location, user.website, user.twitter]);
 
@@ -204,6 +221,12 @@ function EditProfileModal({ open, onClose, user }) {
             onSuccess: () => {
                 qc.invalidateQueries({ queryKey: ["profile", "me"] });
                 qc.invalidateQueries({ queryKey: ["profile"] });
+
+                
+                if (form.username && form.username !== originalUsername) {
+                    navigate(`/profile/${encodeURIComponent(form.username)}`, { replace: true });
+                }
+
                 onClose();
             },
         }
@@ -214,7 +237,6 @@ function EditProfileModal({ open, onClose, user }) {
         try {
             await mutation.mutateAsync(form);
         } catch (err) {
-            // map likely server errors to friendlier messages
             if (err.status === 409) setServerError("Username already taken.");
             else if (err.status === 429) setServerError("Username cooldown active. Try again later.");
             else setServerError(err.message || "Failed to save");
@@ -269,31 +291,31 @@ function EditProfileModal({ open, onClose, user }) {
                             onChange={(e) => {
                                 let raw = e.target.value;
 
-                                // If user pasted a URL, try to extract the first path segment
+                                
                                 try {
                                     if (raw.includes("twitter.com") || raw.includes("x.com")) {
                                         const url = new URL(raw.startsWith("http") ? raw : "https://" + raw);
                                         const parts = url.pathname.split("/").filter(Boolean);
                                         if (parts.length > 0) raw = parts[0];
-                                        else raw = ""; // nothing meaningful in path
+                                        else raw = ""; 
                                     }
                                 } catch {
-                                    // ignore invalid URL parse — continue with raw
+                                    
                                 }
 
-                                // remove leading @ and surrounding whitespace, keep internal editing natural
+                                
                                 raw = raw.replace(/^@+/, "").trim();
 
-                                // normalize to lowercase (Twitter handles are case-insensitive)
+                                
                                 raw = raw.toLowerCase();
 
-                                // strip any characters that are not allowed (this ensures typing/backspace never gets blocked)
+                                
                                 const filtered = raw.replace(/[^a-z0-9_]/g, "");
 
-                                // enforce max length
+                                
                                 const sliced = filtered.slice(0, 15);
 
-                                // allow empty string (so backspace / clearing works)
+                                
                                 setForm((s) => ({ ...s, twitter: sliced }));
                             }}
                             placeholder="username, @username, or x.com/username"
@@ -315,8 +337,6 @@ function EditProfileModal({ open, onClose, user }) {
 }
 
 /* ------------------------- Avatar Editor (production-ready) ------------------------- */
-import Cropper from "react-easy-crop";
-import { useCallback } from "react";
 
 function getCroppedImage(imageSrc, crop) {
     return new Promise((resolve) => {
@@ -346,7 +366,7 @@ function getCroppedImage(imageSrc, crop) {
 }
 
 
-function AvatarEditorModal({ open, onClose }) {
+function AvatarEditorModal({ open, onClose, username }) {
     const qc = useQueryClient();
     const [imageSrc, setImageSrc] = useState(null);
     const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -380,8 +400,25 @@ function AvatarEditorModal({ open, onClose }) {
         if (!res.ok) throw new Error("Upload failed");
         return res.json();
     }, {
-        onSuccess: () => {
+        onSuccess: (data) => {
+            
+            
+            qc.setQueryData(["profile", "me"], (old) =>
+                old ? { ...old, avatar_url: data.avatar_url, avatar_changed_at: data.avatar_changed_at } : old
+            );
+
+            
+            if (username) {
+                qc.setQueryData(["profile", username], (old) =>
+                    old ? { ...old, avatar_url: data.avatar_url, avatar_changed_at: data.avatar_changed_at } : old
+                );
+            }
+
+            
             qc.invalidateQueries({ queryKey: ["profile", "me"] });
+            qc.invalidateQueries({ queryKey: ["profile"] });
+            if (username) qc.invalidateQueries({ queryKey: ["profile", username] });
+
             onClose();
         }
     });
@@ -489,16 +526,16 @@ function SecurityCenterExpanded({ me }) {
 export default function ProfileDashboard() {
     const { username } = useParams();
     const navigate = useNavigate();
-    const me = useMe(); // identity hook (from your earlier snippet)
+    const me = useMe(); 
 
-    // redirect legacy /profile -> /profile/:username when we know who "me" is
+    
     useEffect(() => {
         if (!username && me.data?.username) {
             navigate(`/profile/${encodeURIComponent(me.data.username)}`, { replace: true });
         }
     }, [username, me.data, navigate]);
 
-    // fetch the public profile by username (enabled only when we have a username)
+    
     const profileQuery = useQuery({
         queryKey: ["profile", username],
         enabled: Boolean(username),
@@ -512,7 +549,7 @@ export default function ProfileDashboard() {
         staleTime: 1000 * 60 * 2,
     });
 
-    // Owner-only reputation endpoint (only fetched when the signed-in user is viewing their own profile)
+    
     const canEdit = Boolean(me.data?.username && username && me.data.username === username);
 
     const reputationQuery = useQuery({
@@ -530,19 +567,19 @@ export default function ProfileDashboard() {
     const [editOpen, setEditOpen] = useState(false);
     const [avatarOpen, setAvatarOpen] = useState(false);
 
-    // If route is missing username and we don't have identity yet, show loading.
+    
     if (!username && me.isLoading) return <div className="p-10">Loading profile…</div>;
 
-    // If route missing username and we redirected (or will redirect) but no identity: show not found
+    
     if (!username && !me.data) return <div className="p-10 text-center">Profile not found</div>;
 
-    // Profile fetch states (only relevant if username is present)
+    
     if (Boolean(username) && profileQuery.isLoading) return <div className="p-10">Loading profile…</div>;
     if (Boolean(username) && (profileQuery.isError || !profileQuery.data)) return <div className="p-10 text-center">Profile not found</div>;
 
-    // ---------- Normalize user data shape ----------
+    
     const raw = profileQuery.data || {};
-    // reputation can be either number OR object. normalize to object:
+    
     let reputationObj = {};
     if (raw.reputation == null) {
         reputationObj = { score: 0, level: "--", progress_pct: 0 };
@@ -554,11 +591,11 @@ export default function ProfileDashboard() {
             progress_pct: raw.reputation.progress_pct ?? 0,
         };
     } else {
-        // numeric reputation (legacy)
+        
         reputationObj = { score: Number(raw.reputation) || 0, level: "--", progress_pct: 0 };
     }
 
-    // Prefer the dedicated reputation endpoint when available (owner view)
+    
     const effectiveReputation = reputationQuery.data ? {
         score: reputationQuery.data.score ?? reputationObj.score,
         level: reputationQuery.data.level ?? reputationObj.level,
@@ -700,7 +737,7 @@ export default function ProfileDashboard() {
 
             {/* Modals */}
             {canEdit && <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} user={user} />}
-            {canEdit && <AvatarEditorModal open={avatarOpen} onClose={() => setAvatarOpen(false)} />}
+            {canEdit && <AvatarEditorModal open={avatarOpen} onClose={() => setAvatarOpen(false)} username={user.username ?? username} />}
         </div>
     );
 }

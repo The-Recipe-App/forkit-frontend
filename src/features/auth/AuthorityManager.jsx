@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useContextManager } from "../ContextProvider";
-import { getCurrentUser, logout } from "./authApi";
+import { useAuthApi } from "./authApi";
 
 /**
  * AuthorityManager
@@ -15,6 +15,8 @@ export default function AuthorityManager() {
         setRole,
         setIsLoading,
     } = useContextManager();
+
+    const { logout, getCurrentUser } = useAuthApi();
 
     useEffect(() => {
         let cancelled = false;

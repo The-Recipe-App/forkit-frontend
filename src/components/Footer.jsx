@@ -17,13 +17,13 @@ const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
                     <div className="grid grid-cols-1 md:grid-cols-5 gap-10">
 
                         {/* Brand */}
-                        <div className="md:col-span-2 space-y-4">
+                        <div className="md:col-span-2 flex flex-col md:items-start items-center space-y-4">
                             <Logo
                                 width={280}
                                 src="/footer_logo.svg"
                                 alt="Forkit logo"
                             />
-                            <p className="text-gray-500 leading-relaxed max-w-md">
+                            <p className="text-gray-500 md:text-left text-center leading-relaxed max-w-md">
                                 A community-driven platform to cook, share,
                                 and evolve recipes together, openly and collaboratively.
                             </p>
@@ -88,16 +88,16 @@ const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
                                 </a>
                             </p>
                             <p className="text-xs text-gray-600">
-                                © 2026 Forkit · <p className="inline text-orange-500 opacity-85">For cooks who wants to share, adapt, and improve recipes together</p>
+                                © 2026 Forkit · <span className="inline text-orange-500 opacity-85">For cooks who wants to share, adapt, and improve recipes together</span>
                             </p>
                         </div>
 
                         {/* Tech Stack */}
                         <div className="flex flex-col items-center md:items-end gap-3">
-                            <span className="text-[11px] text-end w-full uppercase tracking-widest text-gray-600">
+                            <span className="text-[11px] text-center md:text-end w-full uppercase tracking-widest text-gray-500">
                                 Built with
                             </span>
-                            <div className="h-px w-full bg-gradient-to-r from-transparent to-neutral-500 " />
+                            <div className="h-px w-full bg-gradient-to-r from-transparent via-neutral-500 to-transparent md:from-transparent md:to-neutral-500 " />
                             <div className="flex flex-wrap justify-center md:justify-end gap-2">
                                 <TechBadge label="React" href="https://react.dev" />
                                 <TechBadge label="Tailwind CSS" href="https://tailwindcss.com" />
@@ -117,11 +117,11 @@ const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
 export default Footer;
 
 const FooterSection = ({ title, children }) => (
-    <nav aria-label={title} className="space-y-4">
-        <h4 className="text-white font-medium tracking-wide">
+    <nav aria-label={title} className="flex flex-col space-y-4 md:items-start items-center">
+        <h4 className="text-white text-center md:text-left font-medium tracking-wide">
             {title}
         </h4>
-        <ul className="space-y-2">
+        <ul className="space-y-2 text-center md:text-left">
             {children}
         </ul>
     </nav>

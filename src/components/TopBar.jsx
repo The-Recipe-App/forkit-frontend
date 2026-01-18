@@ -12,7 +12,7 @@ import {
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import Logo from "../features/Logo";
 import { useMe } from "../hooks/useMe";
-import { logout } from "../features/auth/authApi";
+import { useAuthApi } from "../features/auth/authApi";
 import Modal from "./popUpModal";
 
 /* ───────────────────────── TopBar ───────────────────────── */
@@ -27,6 +27,8 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode }) => {
     const [showNotifications, setShowNotifications] = useState(false);
     const [showCreateHint, setShowCreateHint] = useState(false);
     const [sessionExpired, setSessionExpired] = useState(false);
+
+    const { logout } = useAuthApi();
 
     return (
         <header className="fixed z-50 w-full min-h-[67px] max-h-[67px] border-b border-gray-700 bg-black/65 backdrop-blur-md px-4 py-2 text-white shadow-lg">
@@ -221,7 +223,7 @@ const ProfileButton = ({ isAuthorized, me, windowWidth, setShowLogout }) => {
             <motion.button
                 whileTap={reduce ? {} : { scale: 0.96 }}
                 onClick={() => setOpen((o) => !o)}
-                className="flex items-center gap-3 rounded-full px-3 py-2 hover:bg-neutral-700/80 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className={`flex items-center gap-3 rounded-full ${windowWidth > 1024 ? "px-3 py-2" : "p-1"} hover:bg-neutral-700/80 focus:outline-none focus:ring-2 focus:ring-orange-500`}
             >
                 <div className="w-9 h-9 rounded-full overflow-hidden bg-neutral-700">
                     {avatarSrc ? (
@@ -274,7 +276,7 @@ const ProfileButton = ({ isAuthorized, me, windowWidth, setShowLogout }) => {
                             }}
                             className="w-full text-left border-b border-neutral-700"
                         >
-                            <DropdownItem icon={User} label="Profile" rounded_top />
+                            <DropdownItem icon={User} label="Profile" rounded_top={windowWidth > 1024} />
                         </button>
 
                         {windowWidth < 1024 && (

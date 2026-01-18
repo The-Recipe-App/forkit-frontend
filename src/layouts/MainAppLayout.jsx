@@ -9,6 +9,7 @@ import LoadingScreen from "../components/LoadingAnimation";
 import { useContextManager } from "../features/ContextProvider";
 import { motion, AnimatePresence } from "framer-motion";
 import Login from "../pages/Login";
+import Register from "../pages/Register";
 import backendUrlV1 from "../urls/backendUrl";
 
 const MainAppLayout = () => {

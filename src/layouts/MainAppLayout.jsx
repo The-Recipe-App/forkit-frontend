@@ -77,7 +77,7 @@ const MainAppLayout = () => {
             ) : (
                 <>
                     {/* TopBar spacer – prevents layout shift */}
-                    {shouldExitAnimation && <div style={{ height: TOPBAR_HEIGHT }} />}
+                    <div style={{ height: TOPBAR_HEIGHT }} />
 
                     <TopBar
                         setIsAuthorized={setIsAuthorized}

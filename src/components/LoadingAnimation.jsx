@@ -143,7 +143,7 @@ export default function LoadingScreen({
 
     const isMobile = width < 640;
     const isTablet = width >= 640 && width < 1024;
-    const orbits = isMobile ? [90] : isTablet ? [110, 160] : [140, 220, 300];
+    const orbits = isMobile ? [50, 70, 110] : isTablet ? [70, 110, 160] : [140, 220, 300];
 
     const containerVariants = {
         initial: { opacity: 0 },

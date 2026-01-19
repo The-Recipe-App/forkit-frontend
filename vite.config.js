@@ -1,33 +1,41 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  optimizeDeps: {
-    include: ["swiper"],
-  },
-  server: {
-    host: '0.0.0.0',
-    port: 5173,
-  },
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
 
-  preview: {
-    // ✅ Allow external access via Railway domain during `vite preview`
-    allowedHosts: ['forkit.up.railway.app'],
-    // (Optional) bind preview to all interfaces if you're exposing it
-    host: '0.0.0.0',
-    // (Optional) set a specific port if Railway expects one
-    // port: 4173,
-  },
-
-  define: {
-    global: {},
-  },
-  resolve: {
-    alias: {
-      crypto: 'crypto-browserify',
-      buffer: 'buffer',
+  return {
+    plugins: [react()],
+    optimizeDeps: {
+      include: ["swiper"],
     },
-  },
+
+    server: {
+      host: '0.0.0.0',
+      port: 5173,
+      proxy: {
+        "/api": {
+          target: "https://humorous-integrity-production.up.railway.app",
+          changeOrigin: true,
+          secure: true,
+        },
+      },
+    },
+
+    preview: {
+      allowedHosts: ['forkit.up.railway.app'],
+      host: '0.0.0.0',
+    },
+
+    define: {
+      global: {},
+    },
+
+    resolve: {
+      alias: {
+        crypto: 'crypto-browserify',
+        buffer: 'buffer',
+      },
+    },
+  }
 })

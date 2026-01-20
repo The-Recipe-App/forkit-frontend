@@ -165,7 +165,7 @@ export default function Modal({
                                   via-neutral/[0.05]
                                   to-neutral/[0.02]
                                 backdrop-blur-2xl
-                                border border-orange-300/70
+                                border border-neutral-400/70
                                 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)]
                                 outline-none
                                 ring-1 ring-white/5

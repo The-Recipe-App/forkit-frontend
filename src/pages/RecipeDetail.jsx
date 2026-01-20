@@ -167,7 +167,7 @@ function getWikipediaSlug(ingredient) {
     // Remove common units
     const units = [
         "grams", "gram", "kg", "ml", "l", "tbsp", "tsp", "cup", "cups",
-        "tablespoon", "teaspoon", "oz", "pound", "lb"
+        "tablespoon", "teaspoon", "oz", "pound", "lb", "(", ")", "[", "]", "{", "}"
     ];
     const unitRegex = new RegExp(`\\b(${units.join("|")})\\b`, "g");
     text = text.replace(unitRegex, "");

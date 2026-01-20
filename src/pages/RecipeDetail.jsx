@@ -161,27 +161,44 @@ function Stat({ icon: Icon, value }) {
 function getWikipediaSlug(ingredient) {
     let text = ingredient.toLowerCase();
 
-    // Remove quantities (numbers, fractions)
+    // Remove anything inside brackets
+    text = text.replace(/\(.*?\)|\[.*?\]|\{.*?\}/g, "");
+
+    // Remove numbers & fractions
     text = text.replace(/\d+\/\d+|\d+/g, "");
 
-    // Remove common units
+    // Remove measurement units
     const units = [
-        "grams", "gram", "kg", "ml", "l", "tbsp", "tsp", "cup", "cups",
-        "tablespoon", "teaspoon", "oz", "pound", "lb", "(", ")", "[", "]", "{", "}"
+        "grams", "gram", "kg", "g", "ml", "l", "tbsp", "tsp",
+        "tablespoon", "teaspoon", "cup", "cups", "oz", "pound", "lb"
     ];
-    const unitRegex = new RegExp(`\\b(${units.join("|")})\\b`, "g");
+    const unitRegex = new RegExp(`\\b(${units.join("|")})\\b`, "gi");
     text = text.replace(unitRegex, "");
 
-    // Remove filler words
-    const fillers = ["of", "fresh", "chopped", "sliced", "diced", "minced"];
-    const fillerRegex = new RegExp(`\\b(${fillers.join("|")})\\b`, "g");
+    // Remove filler words (but NOT descriptive ones like "ground")
+    const fillers = [
+        "of", "and", "or", "to", "for", "a", "an",
+        "fresh", "chopped", "sliced", "diced", "minced",
+        "finely", "coarsely"
+    ];
+    const fillerRegex = new RegExp(`\\b(${fillers.join("|")})\\b`, "gi");
     text = text.replace(fillerRegex, "");
 
-    // Clean extra spaces
+    // Remove punctuation
+    text = text.replace(/[.,;:]/g, "");
+
+    // Normalize spaces
     text = text.replace(/\s+/g, " ").trim();
 
-    // Convert to Wikipedia format
-    return text.split(" ").join("_");
+    // If phrase is long, take last 2–3 words (usually the actual ingredient)
+    const words = text.split(" ");
+    let core =
+        words.length > 3
+            ? words.slice(-2).join(" ")
+            : text;
+
+    // Convert to Wikipedia slug
+    return core.replace(/\s+/g, "_");
 }
 
 

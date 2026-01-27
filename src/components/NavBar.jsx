@@ -176,7 +176,7 @@ export default function NavBar({ setNavOpen, isOpen, isOverlay, navRef }) {
             ref={navRef}
             role="navigation"
             aria-label="Main sidebar"
-            className={`z-[90] w-64 bg-[#0f0f0f] text-white flex flex-col fixed bottom-0 top-[67px]`}
+            className={`z-[50] w-64 border-r border-gray-700 bg-black/65 ${isOverlay && "backdrop-blur-md"} text-white flex flex-col fixed bottom-0 top-[66.79px]`}
             initial={false}
             animate={isOpen ? "open" : "closed"}
             variants={reduce ? { open: { x: 0 }, closed: { x: 0 } } : sidebarVariants}
@@ -364,7 +364,7 @@ export default function NavBar({ setNavOpen, isOpen, isOverlay, navRef }) {
                 </AnimatePresence>
 
                 {!isAuthorized && (
-                    <div className="mt-auto p-3 rounded-lg bg-neutral-900/80 text-xs text-neutral-400">
+                    <div className="mt-auto p-3 rounded-lg border border-neutral-800 text-xs text-neutral-400">
                         Fork recipes to customize them.
                         <button
                             onClick={() => {

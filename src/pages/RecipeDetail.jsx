@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     GitFork,
@@ -8,8 +8,63 @@ import {
     Lock,
     Heart,
     Eye,
+    HandPlatter,
 } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
+
+/* ───────────────────────── LazyImage ─────────────────────────
+   Small, reusable lazy image component:
+   - Uses IntersectionObserver so images are not requested until near viewport
+   - Uses native loading="lazy" as a second line of defense
+   - Shows a subtle skeleton while loading, fade-in on load
+*/
+function LazyImage({ src, alt, className = "", aspectClass = "w-full h-full" }) {
+    const ref = useRef(null);
+    const [visible, setVisible] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+
+    useEffect(() => {
+        if (!ref.current) return;
+        const obs = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setVisible(true);
+                    obs.disconnect();
+                }
+            },
+            { rootMargin: "250px", threshold: 0.05 }
+        );
+
+        obs.observe(ref.current);
+        return () => obs.disconnect();
+    }, []);
+
+    return (
+        <div
+            ref={ref}
+            className={`relative overflow-hidden bg-neutral-800 ${aspectClass} ${className}`}
+            aria-busy={!loaded}
+        >
+            {visible && (
+                <img
+                    src={src}
+                    alt={alt}
+                    loading="lazy"
+                    onLoad={() => setLoaded(true)}
+                    className={`object-cover w-full h-full transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"
+                        }`}
+                />
+            )}
+
+            {!loaded && (
+                <div
+                    aria-hidden="true"
+                    className="absolute inset-0 animate-pulse bg-neutral-800/70"
+                />
+            )}
+        </div>
+    );
+}
 
 /* ───────────────────────── Page ───────────────────────── */
 
@@ -18,8 +73,21 @@ export default function RecipeDetail() {
     const navigate = useNavigate();
     const { isAuthorized } = useContextManager();
 
+    // simulate a preloaded dataset (same as your mock)
     const recipe = mockRecipesDetailed.find((r) => r.id === id);
-    if (!recipe) return null;
+
+    useEffect(() => {
+        // scroll to top when the page opens
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }, [id]);
+
+    if (!recipe) {
+        return (
+            <div className="max-w-[1000px] mx-auto px-6 py-12">
+                <NotFoundCard id={id} navigate={navigate} isAuthorized={isAuthorized} />
+            </div>
+        );
+    }
 
     return (
         <div className="max-w-[1200px] mx-auto px-6 py-6">
@@ -40,19 +108,17 @@ function LeftColumn({ recipe, isAuthorized }) {
     return (
         <div className="space-y-6">
             {/* Image */}
-            <div className="rounded-xl overflow-hidden">
-                <img
+            <div className="rounded-xl overflow-hidden shadow-sm">
+                <LazyImage
                     src={recipe.media.hero_image}
                     alt={recipe.title}
-                    className="w-full h-[260px] object-cover"
+                    aspectClass="w-full h-[260px]"
                 />
             </div>
 
             {/* Evolution Card */}
-            <div className="bg-[#141414] rounded-xl p-4 space-y-3">
-                <h3 className="text-sm font-medium text-white">
-                    This Recipe Has Evolved
-                </h3>
+            <div className="bg-[#0f0f0f] rounded-xl p-4 space-y-3 border border-white/5">
+                <h3 className="text-sm font-medium text-white">This Recipe Has Evolved</h3>
 
                 <div className="space-y-2 text-sm">
                     <EvolutionRow label="Original" value="32 times" />
@@ -62,7 +128,7 @@ function LeftColumn({ recipe, isAuthorized }) {
                 {!isAuthorized && (
                     <button
                         onClick={() => navigate("/login")}
-                        className="w-full mt-3 text-sm text-neutral-400 hover:text-orange-400 flex items-center justify-center gap-2 bg-black/30 py-2 rounded-lg"
+                        className="w-full mt-3 text-sm text-neutral-200 hover:text-white flex items-center justify-center gap-2 bg-black/30 py-2 rounded-lg border border-white/3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                     >
                         <Lock size={14} />
                         Sign in to see all ingredients
@@ -75,7 +141,7 @@ function LeftColumn({ recipe, isAuthorized }) {
 
 function EvolutionRow({ label, value }) {
     return (
-        <div className="flex items-center justify-between bg-black/30 px-3 py-2 rounded-lg">
+        <div className="flex items-center justify-between bg-black/20 px-3 py-2 rounded-lg">
             <span className="text-neutral-300">{label}</span>
             <span className="text-neutral-400 text-xs">{value}</span>
         </div>
@@ -87,13 +153,12 @@ function EvolutionRow({ label, value }) {
 function RightColumn({ recipe }) {
     const { isAuthorized } = useContextManager();
     const navigate = useNavigate();
+
     return (
         <div className="space-y-6">
             {/* Title */}
             <div>
-                <h1 className="text-2xl font-semibold text-white">
-                    {recipe.title}
-                </h1>
+                <h1 className="text-2xl font-semibold text-white">{recipe.title}</h1>
                 <p className="text-neutral-400 text-sm mt-1">
                     Crispy-edged, juicy burgers perfect for a quick bite.
                 </p>
@@ -105,40 +170,42 @@ function RightColumn({ recipe }) {
                     <img
                         src={`https://api.dicebear.com/7.x/thumbs/svg?seed=${recipe.author.username}`}
                         className="w-6 h-6 rounded-full"
-                        alt=""
+                        alt={`${recipe.author.username} avatar`}
+                        loading="lazy"
                     />
-                    <span className="text-neutral-300">
-                        {recipe.author.username}
-                    </span>
+                    <span className="text-neutral-300">{recipe.author.username}</span>
                 </div>
 
-                <Stat icon={GitFork} value="150 forks" />
+                <Stat icon={GitFork} value={`${recipe.stats.forks || recipe.lineage?.forks_count || 0} forks`} />
                 <Stat icon={Eye} value="3.4k views" />
             </div>
 
             {/* Action row */}
             <div className="flex items-center gap-3">
-                <button disabled={!isAuthorized} className="disabled:opacity-50 disabled:cursor-not-allowed  flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-black text-sm font-medium hover:bg-orange-600"
+                <button
+                    disabled={!isAuthorized}
+                    className="disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-black text-sm font-medium hover:bg-orange-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                     onClick={() => {
-                        navigate('/recipes/' + recipe.id + '/fork');
+                        navigate("/recipes/" + recipe.id + "/fork");
                     }}
                 >
                     Fork this recipe
                 </button>
+
                 {!isAuthorized && (
                     <button
                         onClick={() => {
                             localStorage.setItem("redirectAfterLogin", window.location.pathname);
                             navigate("/login");
                         }}
-                        className="text-sm text-orange-400 flex items-center gap-2"
+                        className="text-sm text-orange-400 flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
                     >
                         <Lock size={14} />
                         Sign in to fork
                     </button>
                 )}
 
-                <button className="p-2 rounded-lg bg-[#141414] hover:bg-black/60">
+                <button className="p-2 rounded-lg bg-[#141414] hover:bg-black/60" aria-label="Like">
                     <Heart size={16} className="text-neutral-400" />
                 </button>
             </div>
@@ -151,12 +218,14 @@ function RightColumn({ recipe }) {
 
 function Stat({ icon: Icon, value }) {
     return (
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1 text-neutral-300">
             <Icon size={14} />
-            {value}
+            <span className="text-neutral-400">{value}</span>
         </span>
     );
 }
+
+/* ───────────────────────── Ingredients ───────────────────────── */
 
 function getWikipediaSlug(ingredient) {
     let text = ingredient.toLowerCase();
@@ -190,28 +259,20 @@ function getWikipediaSlug(ingredient) {
     // Normalize spaces
     text = text.replace(/\s+/g, " ").trim();
 
-    // If phrase is long, take last 2–3 words (usually the actual ingredient)
+    // If phrase is long, take last 2–3 words
     const words = text.split(" ");
-    let core =
-        words.length > 3
-            ? words.slice(-2).join(" ")
-            : text;
+    let core = words.length > 3 ? words.slice(-2).join(" ") : text;
 
     // Convert to Wikipedia slug
     return core.replace(/\s+/g, "_");
 }
 
-
-/* ───────────────────────── Ingredients ───────────────────────── */
-
 function Ingredients({ recipe }) {
     return (
         <div className="space-y-3">
-            <h3 className="text-lg font-medium text-white">
-                Ingredients
-            </h3>
+            <h3 className="text-lg font-medium text-white">Ingredients</h3>
 
-            <div className="bg-[#141414] rounded-xl divide-y divide-white/5">
+            <div className="bg-[#141414] rounded-xl divide-y divide-white/5 overflow-hidden">
                 {recipe.ingredients.map((item, i) => {
                     const slug = getWikipediaSlug(item);
                     const wikiUrl = `https://en.wikipedia.org/wiki/${slug}`;
@@ -235,6 +296,88 @@ function Ingredients({ recipe }) {
                 })}
             </div>
         </div>
+    );
+}
+
+/* ───────────────────────── Not Found / Suggestions ───────────────────────── */
+
+function NotFoundCard({ id, navigate, isAuthorized }) {
+    // pick 3 suggestions excluding the missing id
+    const suggestions = mockRecipesDetailed.filter((r) => r.id !== id).slice(0, 3);
+
+    return (
+        <div className="">
+            <div className="flex flex-col md:flex-row gap-6 items-center">
+                <div className="flex-none">
+                    <div className="w-28 h-28 rounded-lg bg-gradient-to-br from-orange-600/30 to-orange-400/10 flex items-center justify-center text-orange-400 text-4xl">
+                        <HandPlatter size={48} />
+                    </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                    <h2 className="text-2xl font-semibold text-white">Recipe not found</h2>
+                    <p className="text-neutral-400 mt-1">
+                        We couldn't find that recipe - it may have been removed, renamed, or the link is incorrect.
+                        Try one of the options below or explore similar recipes.
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                            onClick={() => navigate("/recipes")}
+                            className="px-4 py-2 rounded-lg bg-white text-black font-medium hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                        >
+                            Browse Recipes
+                        </button>
+
+                        <button
+                            onClick={() => navigate("/")}
+                            className="px-4 py-2 rounded-lg border border-white/6 text-white hover:bg-white/3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                        >
+                            Home
+                        </button>
+
+                        {isAuthorized && (
+                            <button
+                                onClick={() => navigate("/recipes/create")}
+                                className="px-4 py-2 rounded-lg bg-orange-500 text-black font-medium hover:bg-orange-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                            >
+                                Create a Recipe
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Suggestions */}
+            <div className="mt-8">
+                <h4 className="text-sm text-neutral-300 mb-3">You might like</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {suggestions.map((r) => (
+                        <SuggestedCard key={r.id} recipe={r} onOpen={() => navigate(`/recipes/${r.id}`)} />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function SuggestedCard({ recipe, onOpen }) {
+    return (
+        <article
+            onClick={onOpen}
+            className="bg-black/30 rounded-lg overflow-hidden cursor-pointer hover:scale-[1.02] transition-transform"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === "Enter" && onOpen()}
+        >
+            <div className="h-32">
+                <LazyImage src={recipe.media.hero_image} alt={recipe.title} aspectClass="h-32" />
+            </div>
+            <div className="p-3">
+                <h5 className="text-sm font-medium text-white line-clamp-2">{recipe.title}</h5>
+                <p className="text-xs text-neutral-400 mt-1">{recipe.author.username} · {recipe.meta.time_minutes} min</p>
+            </div>
+        </article>
     );
 }
 
@@ -308,9 +451,7 @@ const mockRecipesDetailed = [
             { author: "PastaQueen", change: "Original recipe" },
             { author: "CheesyLife", change: "Extra parmesan" },
         ],
-        forks: [
-            { id: "f3", author: "HerbAddict", summary: "Added basil and thyme" },
-        ],
+        forks: [{ id: "f3", author: "HerbAddict", summary: "Added basil and thyme" }],
     },
 
     {
@@ -318,7 +459,8 @@ const mockRecipesDetailed = [
         slug: "crispy-chicken-tacos",
         title: "Crispy Chicken Tacos",
         media: {
-            hero_image: "https://images.unsplash.com/photo-1719948515819-71265e1abb0d?q=80&w=1074&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+            hero_image:
+                "https://images.unsplash.com/photo-1719948515819-71265e1abb0d?q=80&w=1074&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             has_video: true,
         },
         author: { username: "TacoMaster" },
@@ -377,9 +519,7 @@ const mockRecipesDetailed = [
             { author: "NoodleNerd", change: "Original hack" },
             { author: "Eggcellent", change: "Jammy egg technique" },
         ],
-        forks: [
-            { id: "f6", author: "FireTongue", summary: "Extra chili oil" },
-        ],
+        forks: [{ id: "f6", author: "FireTongue", summary: "Extra chili oil" }],
     },
 
     {
@@ -410,8 +550,6 @@ const mockRecipesDetailed = [
             { author: "PlantPowered", change: "Original recipe" },
             { author: "GreenChef", change: "Added kale" },
         ],
-        forks: [
-            { id: "f7", author: "SauceBoss", summary: "Spicy tahini sauce" },
-        ],
+        forks: [{ id: "f7", author: "SauceBoss", summary: "Spicy tahini sauce" }],
     },
-]; 
+];

@@ -31,7 +31,6 @@ function extractErrorMessage(data, fallback) {
 
 export function useAuthApi() {
     const { setIsLoading } = useContextManager();
-
     const queryClient = useQueryClient();
 
     async function withLoading(fn) {
@@ -43,25 +42,57 @@ export function useAuthApi() {
         }
     }
 
-    function loginWithPassword(email, password) {
+    // ─────────────────────────────
+    // Login (password, device-aware, OTP-capable)
+    // ─────────────────────────────
+    function loginWithPassword(identifier, password) {
         return withLoading(async () => {
-            try {
-                const res = await fetch(`${backendUrlV1}/auth/login`, {
-                    method: "POST",
-                    credentials: "include",
-                    headers: jsonHeaders(),
-                    body: JSON.stringify({ email, password }),
-                });
+            const res = await fetch(`${backendUrlV1}/auth/login`, {
+                method: "POST",
+                credentials: "include",
+                headers: jsonHeaders(),
+                body: JSON.stringify({ identifier, password }),
+            });
 
-                const data = await parseJsonSafe(res);
-                if (!res.ok) throw new Error(extractErrorMessage(data, "Invalid credentials"));
-                window.location.replace(localStorage.getItem("redirectAfterLogin") || "/");
-            } catch (err) {
-                throw err;
+            const data = await parseJsonSafe(res);
+            if (!res.ok) throw new Error(extractErrorMessage(data, "Invalid credentials"));
+
+            // If OTP challenge required, return it to UI
+            if (data?.challenge === "otp_required") {
+                return data;
             }
+            if (!res.ok) throw new Error(extractErrorMessage(data, "Invalid credentials"));
+            window.location.replace(localStorage.getItem("redirectAfterLogin") || "/");
+            return data; // { ok: true }
         });
     }
 
+    // ─────────────────────────────
+    // Verify login OTP (step-up auth)
+    // ─────────────────────────────
+    function verifyLoginOtp({ identifier, challenge_id, code }) {
+        return withLoading(async () => {
+            const res = await fetch(`${backendUrlV1}/auth/login/verify-otp`, {
+                method: "POST",
+                credentials: "include",
+                headers: jsonHeaders(),
+                body: JSON.stringify({
+                    email: identifier,     // backend still uses email for OTP
+                    challenge_id,
+                    code,
+                }),
+            });
+
+            const data = await parseJsonSafe(res);
+            if (!res.ok) throw new Error(extractErrorMessage(data, "Invalid verification code"));
+            window.location.replace(localStorage.getItem("redirectAfterLogin") || "/");
+            return data; // { ok: true }
+        });
+    }
+
+    // ─────────────────────────────
+    // Register
+    // ─────────────────────────────
     function registerWithPassword(email, password, username = null) {
         return withLoading(async () => {
             const res = await fetch(`${backendUrlV1}/auth/register`, {
@@ -77,6 +108,9 @@ export function useAuthApi() {
         });
     }
 
+    // ─────────────────────────────
+    // Current User
+    // ─────────────────────────────
     function getCurrentUser() {
         return withLoading(async () => {
             const res = await fetch(`${backendUrlV1}/auth/me`, {
@@ -88,6 +122,9 @@ export function useAuthApi() {
         });
     }
 
+    // ─────────────────────────────
+    // Logout
+    // ─────────────────────────────
     function logout() {
         return withLoading(async () => {
             const res = await fetch(`${backendUrlV1}/auth/logout`, {
@@ -96,6 +133,7 @@ export function useAuthApi() {
             });
 
             if (!res.ok) throw new Error("Logout failed");
+
             queryClient.removeQueries({ queryKey: ["profile", "me"] });
             queryClient.clear();
             window.location.reload();
@@ -104,6 +142,7 @@ export function useAuthApi() {
 
     return {
         loginWithPassword,
+        verifyLoginOtp,
         registerWithPassword,
         getCurrentUser,
         logout,

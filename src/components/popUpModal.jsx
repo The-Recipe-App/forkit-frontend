@@ -17,6 +17,7 @@ const TYPE_ICON = {
     warning: AlertTriangle,
     success: CheckCircle2,
     error: XCircle,
+    consent: AlertTriangle,
 };
 
 const TYPE_COLOR = {
@@ -24,6 +25,7 @@ const TYPE_COLOR = {
     warning: "text-yellow-400",
     success: "text-green-500",
     error: "text-red-500",
+    consent: "text-purple-400",
 };
 
 /* ───────────────── Modal ───────────────── */
@@ -45,26 +47,46 @@ export default function Modal({
     lock = true,
     preventCloseWhileBusy = true,
     showCloseButton = false,
-    unlockAfter = null,      // seconds
-    forceProgress = false,   // no actions allowed
+    unlockAfter = null,
+    forceProgress = false,
 
     /* actions */
     primaryAction,
     secondaryAction,
+    tertiaryAction,
+    quaternaryAction,
+    quinaryAction,
     autoCloseOnSuccess = false,
 
     /* steps */
-    steps = null,            // [{ title, description, content }]
+    steps = null,
     initialStep = 0,
 
     /* appearance */
     variant = "default",
     zIndex = 1005,
+
+    /* close */
+    enableClose = false,
+
+    /* ───────────── Consent Additions ───────────── */
+    mode = "default",
+    consents = [],
+    requireAllConsents = true,
+    agreeLabel = "I Agree",
+    disagreeLabel = "I Do Not Agree",
+    onAgree,
+    onDisagree,
+    requireScroll = false,
 }) {
     const initialFocusRef = useRef(null);
+    const bodyRef = useRef(null);
+
     const [busy, setBusy] = useState(false);
     const [unlocked, setUnlocked] = useState(!lock);
     const [step, setStep] = useState(initialStep);
+    const [checked, setChecked] = useState({});
+    const [scrolledToEnd, setScrolledToEnd] = useState(!requireScroll);
 
     const Icon = icon || TYPE_ICON[type] || Info;
 
@@ -96,14 +118,9 @@ export default function Modal({
         return () => window.removeEventListener("keydown", handler, true);
     }, [isOpen, unlocked]);
 
-    if (!isOpen) return null;
-
     const safeClose = () => {
-        if (typeof onClose === "function") {
-            onClose();
-        }
+        if (typeof onClose === "function") onClose();
     };
-
 
     const runAction = async (action) => {
         if (!action?.onClick) return;
@@ -121,7 +138,54 @@ export default function Modal({
         }
     };
 
+    const renderActionButton = (action, style = "secondary") => {
+        if (!action) return null;
+
+        const base =
+            "px-4 py-2 rounded-lg transition disabled:opacity-50 flex items-center gap-2";
+
+        const styles = {
+            primary:
+                "bg-gradient-to-b from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-600/30 hover:from-blue-400 hover:to-blue-500",
+            secondary:
+                "bg-white/10 text-white backdrop-blur-md ring-1 ring-white/10 hover:bg-white/20",
+            ghost:
+                "bg-transparent text-gray-300 hover:text-white",
+        };
+
+        return (
+            <button
+                key={action.label}
+                disabled={busy || action.disabled}
+                onClick={() => runAction(action)}
+                className={`${base} ${styles[style]}`}
+            >
+                {busy && style === "primary" && (
+                    <Loader2 size={16} className="animate-spin" />
+                )}
+                {action.label}
+            </button>
+        );
+    };
+
     const stepData = steps?.[step];
+
+    const allConsentsAccepted = consents.every(c =>
+        !c.required || checked[c.id]
+    );
+
+    const consentAllowed =
+        (!requireAllConsents || allConsentsAccepted) && scrolledToEnd;
+
+    const handleScroll = () => {
+        if (!requireScroll || !bodyRef.current) return;
+        const el = bodyRef.current;
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 10) {
+            setScrolledToEnd(true);
+        }
+    };
+
+    if (!isOpen) return null;
 
     return createPortal(
         <Transition appear show as={Fragment}>
@@ -133,14 +197,7 @@ export default function Modal({
                 initialFocus={initialFocusRef}
                 static
             >
-                <div
-                    className="
-    fixed inset-0
-    bg-gradient-to-b from-black/60 via-black/50 to-black/70
-    backdrop-blur-xl
-  "
-                />
-
+                <div className="fixed inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70 backdrop-blur-xl" />
 
                 <div className="fixed inset-0 flex items-center justify-center p-4">
                     <TransitionChild
@@ -151,9 +208,7 @@ export default function Modal({
                         leave="ease-in duration-200"
                         leaveFrom="opacity-100 scale-100"
                         leaveTo="opacity-0 scale-95 translate-y-1"
-
                     >
-
                         <DialogPanel
                             ref={initialFocusRef}
                             tabIndex={-1}
@@ -161,139 +216,94 @@ export default function Modal({
                                 relative w-full max-w-2xl
                                 rounded-2xl p-6
                                 bg-gradient-to-br
-                                  from-neutral/[0.08]
-                                  via-neutral/[0.05]
-                                  to-neutral/[0.02]
+                                from-neutral/[0.08]
+                                via-neutral/[0.05]
+                                to-neutral/[0.02]
                                 backdrop-blur-2xl
                                 border border-neutral-400/70
                                 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)]
-                                outline-none
-                                ring-1 ring-white/5
-                              
-                                ${variant === "terms" ? "max-h-[90vh] overflow-y-auto" : ""}
-                              `}
-
+                                outline-none ring-1 ring-white/5
+                                ${variant === "terms" || mode === "consent" ? "max-h-[90vh] overflow-y-auto" : ""}
+                            `}
                         >
-                            <div
-                                aria-hidden
-                                className="
-    pointer-events-none absolute inset-0
-    rounded-2xl
-    opacity-[0.035]
-    mix-blend-overlay
-    bg-[url('/noise.png')]
-  "
-                            />
-
-                            <div
-                                aria-hidden
-                                className="
-    pointer-events-none absolute inset-0
-    rounded-2xl
-    bg-gradient-to-b
-      from-white/[0.08]
-      to-transparent
-  "
-                            />
-
-                            {/* Close */}
-                            {showCloseButton && (unlocked && !busy) && (
+                            {enableClose && unlocked && !busy && (
                                 <button
                                     onClick={safeClose}
-
                                     className="absolute top-4 right-4 text-gray-400 hover:text-red-400"
                                 >
                                     <X size={20} />
                                 </button>
                             )}
 
-                            {/* Header */}
                             <div className="flex items-center gap-4 mb-5">
-                                <div
-                                    className="
-      flex h-12 w-12 items-center justify-center
-      rounded-xl
-      bg-white/10
-      ring-1 ring-white/15
-      backdrop-blur-md
-    "
-                                >
+                                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur-md">
                                     <Icon size={26} className={TYPE_COLOR[type]} />
                                 </div>
-
                                 <DialogTitle className="text-xl font-semibold tracking-tight text-white">
                                     {stepData?.title || title}
                                 </DialogTitle>
                             </div>
 
-
-                            {/* Description */}
                             {(stepData?.description || description) && (
-                                <p
-                                    className="text-gray-300 mb-4"
-                                    dangerouslySetInnerHTML={{
-                                        __html: stepData?.description || description,
-                                    }}
-                                />
+                                <p className="text-gray-300 mb-4" dangerouslySetInnerHTML={{ __html: stepData?.description || description }} />
                             )}
 
-
-                            {/* Body */}
-                            <div className="mb-6">
+                            <div
+                                ref={bodyRef}
+                                onScroll={handleScroll}
+                                className="mb-6 max-h-[50vh] overflow-y-auto pr-2"
+                            >
                                 {stepData?.content || children}
                             </div>
 
-                            {/* Progress lock */}
-                            {forceProgress && (
-                                <div className="flex justify-center text-gray-400">
-                                    <Loader2 className="animate-spin" />
+                            {mode === "consent" && consents.length > 0 && (
+                                <div className="space-y-3 mb-6">
+                                    {consents.map(c => (
+                                        <label key={c.id} className="flex gap-3 text-sm text-gray-200 items-start">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!checked[c.id]}
+                                                onChange={e =>
+                                                    setChecked(s => ({ ...s, [c.id]: e.target.checked }))
+                                                }
+                                                className="mt-1"
+                                            />
+                                            <span>
+                                                {c.label}
+                                                {c.required && <span className="text-red-400 ml-1">*</span>}
+                                            </span>
+                                        </label>
+                                    ))}
                                 </div>
                             )}
 
-                            {/* Actions */}
                             {!forceProgress && (
-                                <div className="flex justify-end gap-3">
-                                    {secondaryAction && (
-                                        <button
-                                            disabled={busy}
-                                            onClick={() => runAction(secondaryAction)}
-                                            className="
-  px-4 py-2 rounded-lg
-  bg-white/10
-  text-white
-  backdrop-blur-md
-  ring-1 ring-white/10
-  hover:bg-white/20
-  transition
-  disabled:opacity-50
-"
+                                <div className="flex flex-wrap justify-end gap-3">
+                                    {mode === "consent" ? (
+                                        <>
+                                            <button
+                                                onClick={onDisagree}
+                                                className="px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition"
+                                            >
+                                                {disagreeLabel}
+                                            </button>
 
-                                        >
-                                            {secondaryAction.label}
-                                        </button>
-                                    )}
-
-                                    {primaryAction && (
-                                        <button
-                                            disabled={busy}
-                                            onClick={() => runAction(primaryAction)}
-                                            className="
-  px-4 py-2 rounded-lg
-  bg-gradient-to-b from-blue-500 to-blue-600
-  text-white
-  shadow-lg shadow-blue-600/30
-  hover:from-blue-400 hover:to-blue-500
-  transition
-  disabled:opacity-50
-  flex items-center gap-2
-"
-
-                                        >
-                                            {busy && (
-                                                <Loader2 size={16} className="animate-spin" />
-                                            )}
-                                            {primaryAction.label}
-                                        </button>
+                                            <button
+                                                disabled={!consentAllowed}
+                                                onClick={onAgree}
+                                                className="px-4 py-2 rounded-lg bg-gradient-to-b from-purple-500 to-purple-600 text-white shadow-lg disabled:opacity-40"
+                                            >
+                                                {agreeLabel}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {renderActionButton(secondaryAction, "secondary")}
+                                            {renderActionButton(tertiaryAction, "ghost")}
+                                            {renderActionButton(quaternaryAction, "ghost")}
+                                            {renderActionButton(quinaryAction, "ghost")}
+                                            {renderActionButton(primaryAction, "primary")}
+                                        </>
                                     )}
                                 </div>
                             )}

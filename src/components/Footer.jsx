@@ -4,9 +4,10 @@ const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
     return (
         <footer
             className={`
+                z-[40]
                 ${!navOverlay && navOpen ? "ml-64" : "ml-0"}
                 transition-all duration-300
-                bg-gradient-to-b from-[#18181B] to-[#121214]
+                bg-gradient-to-b from-[#000000] to-[#000000]/30
                 text-gray-400
             `}
         >

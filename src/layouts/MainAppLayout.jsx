@@ -10,12 +10,12 @@ import { useContextManager } from "../features/ContextProvider";
 import { motion, AnimatePresence } from "framer-motion";
 import Login from "../pages/Login";
 import Register from "../pages/Register";
-import backendUrlV1 from "../urls/backendUrl";
 import { useMe } from "../hooks/useMe";
+import ActivateAccount from "../pages/ActivateAccount";
 
 const MainAppLayout = () => {
     const { data: me, isLoading: meLoading, isError } = useMe();
-    const { isLoading, setIsLoading, setIsAuthorized, isAuthorized, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister } =
+    const { isLoading, setIsLoading, setIsAuthorized, isAuthorized, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister, wantsToActivateAccount } =
         useContextManager();
 
     const isOverlay = windowWidth < 1024;
@@ -53,10 +53,10 @@ const MainAppLayout = () => {
             setShouldExitAnimation(false);
         }
     }, [isLoading]);
-    
+
 
     return (
-        <div className="min-h-screen flex flex-col bg-transparent">
+        <div className="min-h-screen flex flex-col bg-transparent relative overflow-hidden">
             <AnimatePresence>
                 {!shouldExitAnimation && (
                     <motion.div
@@ -70,7 +70,9 @@ const MainAppLayout = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
-            {wantsToLogIn ? (
+            {wantsToActivateAccount ? (
+                <ActivateAccount />
+            ) : wantsToLogIn ? (
                 <Login setIsAuthorized={setIsAuthorized} setIsLoading={setIsLoading} />
             ) : wantsToRegister ? (
                 <Register setWantsToLogIn={() => setWantsToLogIn(true)} />

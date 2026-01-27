@@ -1,10 +1,13 @@
-
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import backendUrlV1 from "../urls/backendUrl";
 import { useMe } from "../hooks/useMe";
 import Cropper from "react-easy-crop";
+import { Upload } from "lucide-react";
+import { useContextManager } from "../features/ContextProvider";
+import { registerPasskey_1, registerPasskey_2 } from "../features/auth/passkey";
+import Modal from "../components/popUpModal";
 
 /* ------------------------- Utility: debounce hook ------------------------- */
 function useDebounced(value, ms = 400) {
@@ -23,6 +26,7 @@ function useDebounced(value, ms = 400) {
   It also enforces client-side format validation that matches the server regex:
   /^[a-zA-Z0-9_]{3,30}$/
 */
+
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
 
 export function useUsernameAvailabilitySimple(username, enabled = true) {
@@ -37,13 +41,13 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
             return;
         }
 
-        
+
         if (!USERNAME_RE.test(debounced)) {
             setStatus("invalid");
             return;
         }
 
-        
+
         controller.current?.abort();
         const ctrl = new AbortController();
         controller.current = ctrl;
@@ -51,7 +55,7 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
         let mounted = true;
         setStatus("checking");
 
-        
+
         fetch(`${backendUrlV1}/profile/${encodeURIComponent(debounced)}`, {
             method: "GET",
             credentials: "include",
@@ -67,12 +71,12 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
                     setStatus("taken");
                     return;
                 }
-                
+
                 setStatus(null);
             })
             .catch((err) => {
                 if (err.name === "AbortError") return;
-                
+
                 setStatus(null);
             });
 
@@ -94,6 +98,338 @@ function InlineLabel({ children }) {
     return <div className="text-xs text-zinc-400 uppercase">{children}</div>;
 }
 
+/* ------------------------- Reputation bar ------------------------- */
+function ReputationBar({ rep = {} }) {
+    const pct = Math.max(0, Math.min(100, rep.progress_pct ?? 0));
+
+    return (
+        <div className="bg-white/5 p-4 rounded-2xl">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <div className="text-xs text-zinc-400">Reputation</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-base sm:text-lg">
+                            {(rep.score ?? 0).toLocaleString()}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10">
+                            {rep.level ?? "--"}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="text-xs text-zinc-400">
+                    Next: <span className="text-zinc-300">{rep.next_level ?? "--"}</span>
+                </div>
+            </div>
+
+            <div className="mt-3">
+                <div className="bg-white/10 h-2.5 rounded-full overflow-hidden">
+                    <div
+                        style={{ width: `${pct}%` }}
+                        className="h-full bg-gradient-to-r from-orange-500 to-yellow-400 transition-all duration-500"
+                    />
+                </div>
+                <div className="mt-1 text-[11px] text-zinc-400">
+                    {pct.toFixed(2)}% to next level
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ------------------------- Security center (expanded) ------------------------- */
+function SecurityCenterExpanded() {
+    const qc = useQueryClient();
+    const [confirm, setConfirm] = useState(null); // { type, id }
+    const [working, setWorking] = useState(false);
+
+    const [alertModal, setAlertModal] = useState(false);
+    const [alertModalTitle, setAlertModalTitle] = useState(null);
+    const [alertModalMessage, setAlertModalMessage] = useState(null);
+
+    const [labelModalOpen, setLabelModalOpen] = useState(false);
+    const [newPasskeyLabel, setNewPasskeyLabel] = useState("");
+    const [pendingOptions, setPendingOptions] = useState(null);
+
+
+    const securityQuery = useQuery({
+        queryKey: ["security", "me"],
+        queryFn: async () => {
+            const res = await fetch(`${backendUrlV1}/profile/me/security`, {
+                credentials: "include",
+            });
+            if (!res.ok) throw new Error("Failed to load security info");
+            return res.json();
+        },
+        staleTime: 60_000,
+    });
+
+    const revokeDevice = async (id) => {
+        setWorking(true);
+        await fetch(`${backendUrlV1}/profile/me/devices/${id}/revoke`, {
+            method: "POST",
+            credentials: "include",
+        });
+        await qc.invalidateQueries({ queryKey: ["security", "me"] });
+        setWorking(false);
+        setConfirm(null);
+    };
+
+    const revokeOthers = async () => {
+        setWorking(true);
+        await fetch(`${backendUrlV1}/profile/me/devices/revoke-others`, {
+            method: "POST",
+            credentials: "include",
+        });
+        await qc.invalidateQueries({ queryKey: ["security", "me"] });
+        setWorking(false);
+        setConfirm(null);
+    };
+
+    const removePasskey = async (id) => {
+        setWorking(true);
+        await fetch(`${backendUrlV1}/auth/passkey/${id}`, {
+            method: "DELETE",
+            credentials: "include",
+        });
+        await qc.invalidateQueries({ queryKey: ["security", "me"] });
+        setWorking(false);
+        setConfirm(null);
+    };
+
+    if (securityQuery.isLoading) {
+        return <div className="p-6 text-sm text-zinc-400">Loading security…</div>;
+    }
+
+    const { email, devices = [], passkeys = [], current_device_id } =
+        securityQuery.data || {};
+
+    const parseUA = (ua = "") => {
+        if (/windows/i.test(ua)) return "Windows";
+        if (/mac os/i.test(ua)) return "macOS";
+        if (/iphone|ipad/i.test(ua)) return "iOS";
+        if (/android/i.test(ua)) return "Android";
+        if (/linux/i.test(ua)) return "Linux";
+        return "Unknown OS";
+    };
+
+    return (
+        <section className="rounded-3xl p-6 border border-white/10 space-y-6">
+            {/* CONFIRM MODAL */}
+            <Modal
+                isOpen={!!confirm}
+                lock
+                type="warning"
+                title="Confirm action"
+                description={
+                    confirm?.type === "device"
+                        ? "This will sign out this device."
+                        : confirm?.type === "others"
+                            ? "This will sign out all other devices."
+                            : "This will permanently remove this passkey."
+                }
+                primaryAction={{
+                    label: working ? "Working…" : "Confirm",
+                    onClick: () => {
+                        if (confirm.type === "device") revokeDevice(confirm.id);
+                        if (confirm.type === "others") revokeOthers();
+                        if (confirm.type === "passkey") removePasskey(confirm.id);
+                    },
+                }}
+                secondaryAction={{
+                    label: "Cancel",
+                    onClick: () => setConfirm(null),
+                }}
+            />
+
+            <Modal
+                isOpen={alertModal}
+                lock
+                type="error"
+                title={alertModalTitle}
+                description={alertModalMessage}
+                secondaryAction={{
+                    label: "Close",
+                    onClick: () => {
+                        setAlertModalTitle(null);
+                        setAlertModalMessage(null);
+                        setAlertModal(false);
+                    },
+                }}
+            />
+
+            <Modal
+                isOpen={labelModalOpen}
+                lock
+                type="info"
+                title="Name this passkey"
+                description="This helps you recognize this device later."
+                primaryAction={{
+                    label: working ? "Saving…" : "Save Passkey",
+                    onClick: async () => {
+                        if (!newPasskeyLabel.trim() || !pendingOptions) return;
+
+                        try {
+                            setWorking(true);
+                            await registerPasskey_2(pendingOptions, newPasskeyLabel.trim());
+                            setLabelModalOpen(false);
+                            setPendingOptions(null);
+                            qc.invalidateQueries({ queryKey: ["security", "me"] });
+                        } catch (e) {
+                            setAlertModalTitle("Passkey registration failed");
+                            setAlertModalMessage(e.message || "Verification failed");
+                            setAlertModal(true);
+                        } finally {
+                            setWorking(false);
+                        }
+                    }
+                }}
+                secondaryAction={{
+                    label: "Cancel",
+                    onClick: () => {
+                        setLabelModalOpen(false);
+                        setPendingOptions(null);
+                    }
+                }}
+            >
+                <div className="w-full p-2">
+                    <input
+                        autoFocus
+                        className="input-dark w-full"
+                        placeholder="e.g. Work Laptop, Personal Phone"
+                        value={newPasskeyLabel}
+                        onChange={(e) => setNewPasskeyLabel(e.target.value)}
+                    />
+                </div>
+            </Modal>
+
+
+
+            <h3 className="text-lg font-bold">Security</h3>
+
+            {/* EMAIL */}
+            <div className="p-4 bg-white/5 rounded-lg">
+                <div className="font-semibold">Primary Email</div>
+                <div className="text-sm text-zinc-400">{email}</div>
+            </div>
+
+            {/* PASSKEYS */}
+            <div className="p-4 bg-white/5 rounded-lg">
+                <div className="flex items-center justify-between">
+                    <div className="font-semibold">Passkeys</div>
+                    <button
+                        className="btn-primary"
+                        onClick={async () => {
+                            try {
+                                const options = await registerPasskey_1();
+                                setPendingOptions(options);
+                                setNewPasskeyLabel("");
+                                setLabelModalOpen(true);
+                            } catch (e) {
+                                setAlertModalTitle("Failed to start passkey registration");
+                                setAlertModalMessage(e.message || "Failed to register passkey");
+                                setAlertModal(true);
+                            }
+                        }}
+                    >
+                        Add Passkey
+                    </button>
+
+                </div>
+
+                <div className="mt-3 space-y-2">
+                    {passkeys.length === 0 && (
+                        <div className="text-sm text-zinc-500">No passkeys registered</div>
+                    )}
+
+                    {passkeys.map((pk) => (
+                        <div
+                            key={pk.id}
+                            className="flex items-center justify-between text-sm bg-black/30 rounded-md px-3 py-2"
+                        >
+                            <div>
+                                <div className="font-medium">
+                                    {pk.name}
+                                    {pk.is_current && (
+                                        <span className="ml-2 text-xs text-green-400">(This device)</span>
+                                    )}
+                                </div>
+                                <div className="text-xs text-zinc-500">
+                                    Added {new Date(pk.created_at).toLocaleDateString()}
+                                </div>
+                            </div>
+                            <button
+                                className="text-red-400 text-xs hover:underline"
+                                onClick={() =>
+                                    setConfirm({ type: "passkey", id: pk.id })
+                                }
+                            >
+                                Remove
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* DEVICES */}
+            <div className="p-4 bg-white/5 rounded-lg">
+                <div className="flex items-center justify-between">
+                    <div className="font-semibold">Devices</div>
+                    <button
+                        className="text-sm text-red-400 hover:underline"
+                        onClick={() => setConfirm({ type: "others" })}
+                    >
+                        Sign out all other devices
+                    </button>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                    {devices.map((d) => {
+                        return (
+                            <div
+                                key={d.id}
+                                className="flex items-center justify-between text-sm bg-black/30 rounded-md px-3 py-2"
+                            >
+                                <div>
+                                    <div className="font-medium">
+                                        {parseUA(d.user_agent)}
+                                        {d.is_current && (
+                                            <span className="ml-2 text-xs text-green-400">
+                                                (This device)
+                                            </span>
+                                        )}
+                                        {d.is_trusted && (
+                                            <span className="ml-2 text-xs text-blue-400">
+                                                Trusted
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-zinc-500">
+                                        Last used{" "}
+                                        {new Date(d.last_seen_at).toLocaleString()}
+                                    </div>
+                                </div>
+
+                                {!d.is_current && (
+                                    <button
+                                        className="text-red-400 text-xs hover:underline"
+                                        onClick={() =>
+                                            setConfirm({ type: "device", id: d.id })
+                                        }
+                                    >
+                                        Sign out
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+
 /* ------------------------- Badges list ------------------------- */
 function BadgesList({ badges = [] }) {
     if (!badges || !badges.length) return <div className="text-sm text-zinc-500">No badges yet</div>;
@@ -109,27 +445,6 @@ function BadgesList({ badges = [] }) {
     );
 }
 
-/* ------------------------- Reputation bar ------------------------- */
-function ReputationBar({ rep = {} }) {
-    
-    const pct = Math.max(0, Math.min(100, rep.progress_pct ?? 0));
-    return (
-        <div className="bg-white/5 p-4 rounded-xl">
-            <div className="flex items-center justify-between">
-                <div>
-                    <div className="text-sm">Reputation</div>
-                    <div className="font-bold text-lg">{(rep.score ?? 0).toLocaleString()} -- {rep.level ?? "--"}</div>
-                </div>
-                <div className="text-sm text-zinc-400">Next: {rep.next_level ?? "--"}</div>
-            </div>
-
-            <div className="mt-4 bg-white/10 h-3 rounded-full overflow-hidden">
-                <div style={{ width: `${pct}%` }} className="h-full rounded-full bg-gradient-to-r from-orange-500 to-yellow-400" />
-            </div>
-            <div className="mt-2 text-xs text-zinc-400">Progress: {Math.round(pct * 100) / 100}%</div>
-        </div>
-    );
-}
 
 /* ------------------------- Activity feed (safe) ------------------------- */
 function ActivityFeed({ username }) {
@@ -138,7 +453,7 @@ function ActivityFeed({ username }) {
         enabled: Boolean(username),
         queryFn: async () => {
             const res = await fetch(`${backendUrlV1}/profile/${encodeURIComponent(username)}/activity`, { credentials: "include" });
-            
+
             if (!res.ok) return [];
             return res.json();
         },
@@ -170,34 +485,46 @@ const TWITTER_RE = /^[A-Za-z0-9_]{0,15}$/;
 function EditProfileModal({ open, onClose, user }) {
     const qc = useQueryClient();
     const navigate = useNavigate();
+    const usernameRef = useRef(null);
 
-    const [form, setForm] = useState({
+    const buildInitialForm = () => ({
         username: user.username,
         bio: user.bio || "",
         location: user.location || "",
         website: user.website || "",
         twitter: user.twitter || "",
+        youtube: user.youtube || ""
     });
+
+    const [form, setForm] = useState(buildInitialForm);
     const [serverError, setServerError] = useState(null);
+    const [cooldown, setCooldown] = useState(null);
+    const [shake, setShake] = useState(false);
 
     const originalUsername = user.username;
 
     useEffect(() => {
         if (!open) return;
-        setForm({
-            username: user.username,
-            bio: user.bio || "",
-            location: user.location || "",
-            website: user.website || "",
-            twitter: user.twitter || "",
-        });
+        setForm(buildInitialForm());
         setServerError(null);
-    }, [open, user.username, user.bio, user.location, user.website, user.twitter]);
+        setCooldown(null);
+        setShake(false);
+        setTimeout(() => usernameRef.current?.focus(), 80);
+    }, [open, user]);
 
-    const usernameStatus = useUsernameAvailabilitySimple(form.username, open);
+    const usernameStatus = useUsernameAvailabilitySimple(
+        form.username,
+        open && form.username !== originalUsername
+    );
 
-    const isUsernameChanged = form.username !== (user.username ?? "");
-    const canSave = !(!open) && (!isUsernameChanged || usernameStatus === "available");
+    const isUsernameChanged = form.username !== originalUsername;
+    const isDirty = JSON.stringify(form) !== JSON.stringify(buildInitialForm());
+
+    const canSave =
+        open &&
+        isDirty &&
+        (!isUsernameChanged || usernameStatus === "available") &&
+        !cooldown;
 
     const mutation = useMutation(
         async (payload) => {
@@ -210,8 +537,7 @@ function EditProfileModal({ open, onClose, user }) {
 
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                const msg = data.detail || data.message || `Save failed (${res.status})`;
-                const err = new Error(msg);
+                const err = new Error(data.detail || data.message || "Save failed");
                 err.status = res.status;
                 throw err;
             }
@@ -222,113 +548,203 @@ function EditProfileModal({ open, onClose, user }) {
                 qc.invalidateQueries({ queryKey: ["profile", "me"] });
                 qc.invalidateQueries({ queryKey: ["profile"] });
 
-                
-                if (form.username && form.username !== originalUsername) {
+                if (form.username !== originalUsername) {
                     navigate(`/profile/${encodeURIComponent(form.username)}`, { replace: true });
                 }
 
                 onClose();
             },
+            onError: (err) => {
+                if (err.status === 429) {
+                    setCooldown(30);
+                    const t = setInterval(() => {
+                        setCooldown((c) => {
+                            if (c <= 1) {
+                                clearInterval(t);
+                                return null;
+                            }
+                            return c - 1;
+                        });
+                    }, 1000);
+                }
+
+                setServerError(err.message || "Save failed");
+                setShake(true);
+                setTimeout(() => setShake(false), 450);
+            }
         }
     );
 
-    async function save() {
-        setServerError(null);
+    const parseHandle = (value, domain, maxLen = 30) => {
+        let raw = value.trim();
         try {
-            await mutation.mutateAsync(form);
-        } catch (err) {
-            if (err.status === 409) setServerError("Username already taken.");
-            else if (err.status === 429) setServerError("Username cooldown active. Try again later.");
-            else setServerError(err.message || "Failed to save");
-        }
-    }
+            if (raw.includes(domain)) {
+                const url = new URL(raw.startsWith("http") ? raw : "https://" + raw);
+                raw = url.pathname.split("/").filter(Boolean)[0] || "";
+            }
+        } catch { }
+
+        return raw.replace(/^@+/, "").toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, maxLen);
+    };
 
     if (!open) return null;
 
-
     return (
-        <div className="fixed inset-0 grid place-items-center z-50 mx-4 bg-black/60" role="dialog" aria-modal="true">
-            <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-lg">
-                <h3 className="text-lg font-bold mb-3">Edit Profile</h3>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm grid place-items-center z-50 px-4">
+            <div
+                className={`
+                    relative w-full max-w-lg
+                    rounded-2xl
+                    bg-gradient-to-br from-neutral-900/80 via-neutral-800/70 to-neutral-900/80
+                    backdrop-blur-sm
+                    border border-white/10
+                    shadow-2xl shadow-black/60
+                    ring-1 ring-white/5
+                    p-6
+                    ${shake ? "animate-shake" : ""}
+                `}
+            >
+                <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
 
-                {serverError && <div className="mb-3 text-sm bg-red-500/10 p-2 rounded text-red-400">{serverError}</div>}
+                <h3 className="text-lg font-semibold tracking-wide mb-4 text-white">
+                    Edit Profile
+                </h3>
 
-                <label className="text-sm mb-1 block">Username</label>
-                <input
-                    aria-label="username"
-                    className="input-dark w-full"
-                    value={form.username}
-                    onChange={(e) => setForm((s) => ({ ...s, username: e.target.value }))}
-                />
-                <div className="mt-2">
-                    {isUsernameChanged && usernameStatus === "checking" && <div className="text-xs text-zinc-400">Checking…</div>}
-                    {isUsernameChanged && usernameStatus === "available" && <div className="text-xs text-green-400">Available ✓</div>}
-                    {isUsernameChanged && usernameStatus === "taken" && <div className="text-xs text-red-400">Taken ✕</div>}
-                    {isUsernameChanged && usernameStatus === "invalid" && <div className="text-xs text-yellow-300">Invalid format (3–30 chars: letters, numbers, underscore)</div>}
-                </div>
+                <div className="max-h-[calc(100vh-280px)] overflow-y-auto forkit-scroll pl-1 pr-3">
 
-                <label className="text-sm mt-4 mb-1 block">Bio</label>
-                <textarea className="input-dark w-full h-28" value={form.bio} onChange={(e) => setForm((s) => ({ ...s, bio: e.target.value }))} />
+                    {serverError && <div className="mb-2 text-sm text-red-400">{serverError}</div>}
+                    {cooldown && <div className="mb-2 text-xs text-yellow-400">Try again in {cooldown}s</div>}
 
-                <div className="grid md:grid-cols-2 gap-3 mt-4">
-                    <div>
-                        <label className="text-sm mb-1 block">Location</label>
-                        <input className="input-dark w-full" value={form.location} onChange={(e) => setForm((s) => ({ ...s, location: e.target.value }))} />
+                    <label className="text-sm mb-1 block">Username</label>
+                    <input
+                        ref={usernameRef}
+                        className="input-dark w-full"
+                        value={form.username}
+                        onChange={(e) => setForm(s => ({ ...s, username: e.target.value }))}
+                    />
+                    <div className="mt-1 h-4 text-xs">
+                        {isUsernameChanged && usernameStatus === "checking" && <span className="text-zinc-400">Checking…</span>}
+                        {isUsernameChanged && usernameStatus === "available" && <span className="text-green-400">Available ✓</span>}
+                        {isUsernameChanged && usernameStatus === "taken" && <span className="text-red-400">Taken ✕</span>}
+                        {isUsernameChanged && usernameStatus === "invalid" && <span className="text-yellow-400">3-30 chars, letters, numbers, underscore</span>}
                     </div>
-                    <div>
-                        <label className="text-sm mb-1 block">Website</label>
-                        <input className="input-dark w-full" value={form.website} onChange={(e) => setForm((s) => ({ ...s, website: e.target.value }))} />
-                    </div>
-                    <div className="md:col-span-2">
-                        <label className="flex flex-col text-sm mb-2">
-                            Twitter
-                            <span className="text-xs text-zinc-400">(You can paste your full Twitter/X profile URL, we'll save just the username)</span>
-                        </label>
 
+                    <label className="text-sm mt-4 mb-1 block">
+                        Bio <span className="text-xs text-zinc-400">({form.bio.length}/160)</span>
+                    </label>
+                    <textarea
+                        maxLength={160}
+                        className="input-dark w-full h-24 resize-none"
+                        value={form.bio}
+                        onChange={(e) => setForm(s => ({ ...s, bio: e.target.value }))}
+                    />
+
+                    <div className="grid md:grid-cols-2 gap-3 mt-4">
+                        <div>
+                            <label className="text-sm mb-1 block">Location</label>
+                            <input
+                                className="input-dark w-full"
+                                value={form.location}
+                                onChange={(e) => setForm(s => ({ ...s, location: e.target.value }))}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-sm mb-1 block">Website</label>
+                            <input
+                                className="input-dark w-full"
+                                placeholder="https://example.com"
+                                value={form.website}
+                                onChange={(e) => setForm(s => ({ ...s, website: e.target.value }))}
+                            />
+                            {form.website && (
+                                <a
+                                    href={form.website.startsWith("http") ? form.website : `https://${form.website}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-xs text-blue-400 mt-1 inline-block"
+                                >
+                                    Preview website ↗
+                                </a>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="mt-4">
+                        <label className="text-sm mb-1 block">Twitter / X</label>
                         <input
                             className="input-dark w-full"
+                            placeholder="@username or x.com/username"
                             value={form.twitter}
-                            onChange={(e) => {
-                                let raw = e.target.value;
-
-                                
-                                try {
-                                    if (raw.includes("twitter.com") || raw.includes("x.com")) {
-                                        const url = new URL(raw.startsWith("http") ? raw : "https://" + raw);
-                                        const parts = url.pathname.split("/").filter(Boolean);
-                                        if (parts.length > 0) raw = parts[0];
-                                        else raw = ""; 
-                                    }
-                                } catch {
-                                    
-                                }
-
-                                
-                                raw = raw.replace(/^@+/, "").trim();
-
-                                
-                                raw = raw.toLowerCase();
-
-                                
-                                const filtered = raw.replace(/[^a-z0-9_]/g, "");
-
-                                
-                                const sliced = filtered.slice(0, 15);
-
-                                
-                                setForm((s) => ({ ...s, twitter: sliced }));
-                            }}
-                            placeholder="username, @username, or x.com/username"
+                            onChange={(e) =>
+                                setForm(s => ({ ...s, twitter: parseHandle(e.target.value, "x.com", 15) }))
+                            }
                         />
+                        {form.twitter && (
+                            <a
+                                href={form.twitter.startsWith("http") ? form.twitter : `https://twitter.com/${form.twitter}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs text-blue-400 mt-1 inline-block"
+                            >
+                                Preview twitter ↗
+                            </a>
+                        )}
 
+                        <label className="text-sm mt-3 mb-1 block">YouTube</label>
+                        <input
+                            className="input-dark w-full"
+                            placeholder="youtube.com/@channel or channel name"
+                            value={form.youtube}
+                            onChange={(e) =>
+                                setForm(s => ({ ...s, youtube: parseHandle(e.target.value, "youtube.com", 50) }))
+                            }
+                        />
+                        {form.youtube && (
+                            <a
+                                href={form.youtube.startsWith("http") ? form.youtube : `https://youtube.com/@${form.youtube}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs text-blue-400 mt-1 inline-block"
+                            >
+                                Preview YouTube ↗
+                            </a>
+                        )}
                     </div>
-
                 </div>
 
-                <div className="flex justify-end gap-3 mt-4">
-                    <button onClick={onClose} className="btn-ghost" disabled={mutation.isLoading}>Cancel</button>
-                    <button onClick={save} disabled={!canSave || mutation.isLoading} className="btn-primary">
-                        {mutation.isLoading ? "Saving…" : "Save"}
+                <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/5">
+                    <button
+                        className="px-4 py-2 rounded-lg text-sm text-zinc-300 hover:text-white hover:bg-white/5 transition"
+                        onClick={() => {
+                            setForm(buildInitialForm());
+                            setServerError(null);
+                            setCooldown(null);
+                            setShake(false);
+                            onClose();
+                        }}
+                        disabled={mutation.isLoading}
+                    >
+                        Cancel
+                    </button>
+
+                    <button
+                        className="
+                            px-5 py-2 rounded-lg text-sm font-medium text-neutral-900
+                            bg-gradient-to-r from-orange-500 to-orange-600
+                            hover:from-orange-600 hover:to-orange-500
+                            disabled:opacity-50 disabled:cursor-not-allowed
+                            transition
+                        "
+                        disabled={!canSave || mutation.isLoading}
+                        onClick={() => {
+                            const payload = Object.fromEntries(
+                                Object.entries(form).map(([k, v]) => [k, v.trim() === "" ? null : v])
+                            );
+                            mutation.mutate(payload);
+                        }}
+                    >
+                        {mutation.isLoading ? "Saving…" : "Save Changes"}
                     </button>
                 </div>
             </div>
@@ -383,8 +799,8 @@ function AvatarEditorModal({ open, onClose, username }) {
         }
     }, [open]);
 
-    const onCropComplete = useCallback((_, croppedPixels) => {
-        setCroppedAreaPixels(croppedPixels);
+    const onCropComplete = useCallback((_, pixels) => {
+        setCroppedAreaPixels(pixels);
     }, []);
 
     const uploadMutation = useMutation(async (blob) => {
@@ -401,58 +817,79 @@ function AvatarEditorModal({ open, onClose, username }) {
         return res.json();
     }, {
         onSuccess: (data) => {
-            
-            
             qc.setQueryData(["profile", "me"], (old) =>
                 old ? { ...old, avatar_url: data.avatar_url, avatar_changed_at: data.avatar_changed_at } : old
             );
 
-            
             if (username) {
                 qc.setQueryData(["profile", username], (old) =>
                     old ? { ...old, avatar_url: data.avatar_url, avatar_changed_at: data.avatar_changed_at } : old
                 );
             }
 
-            
-            qc.invalidateQueries({ queryKey: ["profile", "me"] });
             qc.invalidateQueries({ queryKey: ["profile"] });
-            if (username) qc.invalidateQueries({ queryKey: ["profile", username] });
-
             onClose();
-        }
+        },
+        onError: () => setError("Upload failed. Please try again.")
     });
+
+    const handleFile = (file) => {
+        if (!file) return;
+        if (!file.type.startsWith("image/")) {
+            setError("Only image files are allowed.");
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            setError("Image must be under 5MB.");
+            return;
+        }
+
+        const url = URL.createObjectURL(file);
+        setImageSrc(url);
+    };
 
     async function handleSave() {
         try {
             const blob = await getCroppedImage(imageSrc, croppedAreaPixels);
             await uploadMutation.mutateAsync(blob);
-        } catch (e) {
-            setError("Failed to process image");
+        } catch {
+            setError("Failed to process image.");
         }
     }
 
     if (!open) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/70 grid place-items-center z-50">
-            <div className="bg-zinc-900 p-6 rounded-2xl w-full max-w-md">
-                <h3 className="font-bold mb-3">Edit Avatar</h3>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm grid place-items-center z-50 px-4">
+            <div className="relative w-full max-w-lg
+                    rounded-2xl
+                    bg-gradient-to-br from-neutral-900/80 via-neutral-800/70 to-neutral-900/80
+                    backdrop-blur-sm
+                    border border-white/10
+                    shadow-2xl shadow-black/60
+                    ring-1 ring-white/5
+                    p-6">
+                <h3 className="text-lg font-semibold mb-3">Edit Avatar</h3>
 
-                {error && <div className="text-red-400 text-sm mb-2">{error}</div>}
+                {error && <div className="text-red-400 text-sm mb-3">{error}</div>}
 
                 {!imageSrc && (
-                    <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            const reader = new FileReader();
-                            reader.onload = () => setImageSrc(reader.result);
-                            reader.readAsDataURL(file);
-                        }}
-                    />
+                    <label className="relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-zinc-700 rounded-xl cursor-pointer bg-neutral-800/50 hover:bg-neutral-800/80 transition">
+                        <div className="flex flex-col items-center text-center px-4">
+                            <Upload className="w-6 h-6 text-zinc-400 mb-2" />
+                            <p className="text-sm text-zinc-300">
+                                <span className="font-medium">Click to upload</span> or drag & drop
+                            </p>
+                            <p className="text-xs text-zinc-500 mt-1">Square image works best • Max 5MB</p>
+                        </div>
+
+                        <input
+                            type="file"
+                            accept="image/*"
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            onChange={(e) => handleFile(e.target.files?.[0])}
+                        />
+                    </label>
                 )}
 
                 {imageSrc && (
@@ -467,75 +904,98 @@ function AvatarEditorModal({ open, onClose, username }) {
                                 onZoomChange={setZoom}
                                 onCropComplete={onCropComplete}
                             />
+
+                            {uploadMutation.isLoading && (
+                                <div className="absolute inset-0 bg-black/60 grid place-items-center text-white text-sm">
+                                    Saving…
+                                </div>
+                            )}
                         </div>
 
-                        <input
-                            type="range"
-                            min={1}
-                            max={3}
-                            step={0.01}
-                            value={zoom}
-                            onChange={(e) => setZoom(Number(e.target.value))}
-                            className="w-full mt-3"
-                        />
+                        <div className="mt-3">
+                            <input
+                                type="range"
+                                min={1}
+                                max={3}
+                                step={0.01}
+                                value={zoom}
+                                onChange={(e) => setZoom(Number(e.target.value))}
+                                className="w-full accent-white"
+                            />
+                        </div>
 
                         <div className="flex justify-end gap-2 mt-4">
-                            <button className="btn-ghost" onClick={onClose}>Cancel</button>
-                            <button className="btn-primary" onClick={handleSave} disabled={uploadMutation.isLoading}>
+                            <button className="btn-ghost" onClick={onClose} disabled={uploadMutation.isLoading}>
+                                Cancel
+                            </button>
+                            <button
+                                className="btn-primary"
+                                onClick={handleSave}
+                                disabled={uploadMutation.isLoading}
+                            >
                                 {uploadMutation.isLoading ? "Saving…" : "Save Avatar"}
                             </button>
                         </div>
                     </>
+                )}
+
+                {!imageSrc && (
+                    <div className="flex justify-end mt-4">
+                        <button className="btn-ghost" onClick={onClose}>Cancel</button>
+                    </div>
                 )}
             </div>
         </div>
     );
 }
 
+const ProfileLoading = () => (
+    <div className="flex justify-center items-center min-h-[50vh]">
+        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-xl animate-pulse">
+            <div className="h-6 w-1/2 bg-white/10 rounded mb-6" />
+            <div className="h-4 w-full bg-white/10 rounded mb-3" />
+            <div className="h-4 w-5/6 bg-white/10 rounded mb-3" />
+            <div className="h-4 w-2/3 bg-white/10 rounded" />
+        </div>
+    </div>
+);
 
-/* ------------------------- Security center (expanded) ------------------------- */
-function SecurityCenterExpanded({ me }) {
-    const [emailOpen, setEmailOpen] = useState(false);
-    const [pwOpen, setPwOpen] = useState(false);
+const ProfileNotFound = () => (
+    <div className="flex justify-center items-center min-h-[60vh] px-6">
+        <div className="max-w-md w-full rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-10 shadow-2xl text-center animate-fadeIn">
+            <div className="text-5xl mb-4">😕</div>
+            <h2 className="text-xl font-semibold text-white mb-2">
+                Profile Not Found
+            </h2>
+            <p className="text-sm text-white/60 mb-6">
+                The user you're looking for doesn't exist or may have been removed.
+            </p>
 
-    return (
-        <section className="rounded-3xl p-6 border border-white/10 space-y-4">
-            <h3 className="text-lg font-bold">Security</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-4 bg-white/5 rounded-lg">
-                    <div className="font-semibold">Primary email</div>
-                    <div className="text-sm text-zinc-400">{me?.email ?? "--"}</div>
-                    <div className="mt-3 flex gap-2">
-                        <button className="btn-primary" onClick={() => setEmailOpen(true)}>Change</button>
-                    </div>
-                </div>
-
-                <div className="p-4 bg-white/5 rounded-lg">
-                    <div className="font-semibold">Password</div>
-                    <div className="text-sm text-zinc-400">Managed by our auth system</div>
-                    <div className="mt-3">
-                        <button className="btn-primary" onClick={() => setPwOpen(true)}>Change Password</button>
-                    </div>
-                </div>
-            </div>
-        </section>
-    );
-}
-
+            <button
+                onClick={() => window.history.back()}
+                className="px-5 py-2 rounded-xl bg-orange-500/90 hover:bg-orange-500 text-white font-medium transition"
+            >
+                Go Back
+            </button>
+        </div>
+    </div>
+);
 /* ------------------------- Main Profile Dashboard ------------------------- */
 export default function ProfileDashboard() {
     const { username } = useParams();
     const navigate = useNavigate();
-    const me = useMe(); 
+    const me = useMe();
 
-    
+    const { windowWidth } = useContextManager();
+
+
     useEffect(() => {
         if (!username && me.data?.username) {
             navigate(`/profile/${encodeURIComponent(me.data.username)}`, { replace: true });
         }
     }, [username, me.data, navigate]);
 
-    
+
     const profileQuery = useQuery({
         queryKey: ["profile", username],
         enabled: Boolean(username),
@@ -549,7 +1009,7 @@ export default function ProfileDashboard() {
         staleTime: 1000 * 60 * 2,
     });
 
-    
+
     const canEdit = Boolean(me.data?.username && username && me.data.username === username);
 
     const reputationQuery = useQuery({
@@ -567,19 +1027,38 @@ export default function ProfileDashboard() {
     const [editOpen, setEditOpen] = useState(false);
     const [avatarOpen, setAvatarOpen] = useState(false);
 
-    
-    if (!username && me.isLoading) return <div className="p-10">Loading profile…</div>;
+    useEffect(() => {
+        const isModalOpen = editOpen || avatarOpen;
 
-    
-    if (!username && !me.data) return <div className="p-10 text-center">Profile not found</div>;
+        if (isModalOpen) {
+            document.body.style.overflow = "hidden";
+        } else {
+            document.body.style.overflow = "";
+        }
 
-    
-    if (Boolean(username) && profileQuery.isLoading) return <div className="p-10">Loading profile…</div>;
-    if (Boolean(username) && (profileQuery.isError || !profileQuery.data)) return <div className="p-10 text-center">Profile not found</div>;
+        return () => {
+            document.body.style.overflow = "";
+        };
+    }, [editOpen, avatarOpen]);
 
-    
+    const isOwnProfile = !username;
+    const isLoading = isOwnProfile ? me.isLoading : profileQuery.isLoading;
+
+    const profileData = isOwnProfile ? me.data : profileQuery.data;
+    const isMissing =
+        isOwnProfile ? !me.data : profileQuery.isError || !profileQuery.data;
+
+    // -----------------------------
+    // RENDER STATES
+    // -----------------------------
+
+    if (isLoading) return <ProfileLoading />;
+
+    if (isMissing) return <ProfileNotFound />;
+
+
     const raw = profileQuery.data || {};
-    
+
     let reputationObj = {};
     if (raw.reputation == null) {
         reputationObj = { score: 0, level: "--", progress_pct: 0 };
@@ -591,11 +1070,10 @@ export default function ProfileDashboard() {
             progress_pct: raw.reputation.progress_pct ?? 0,
         };
     } else {
-        
+
         reputationObj = { score: Number(raw.reputation) || 0, level: "--", progress_pct: 0 };
     }
 
-    
     const effectiveReputation = reputationQuery.data ? {
         score: reputationQuery.data.score ?? reputationObj.score,
         level: reputationQuery.data.level ?? reputationObj.level,
@@ -611,133 +1089,207 @@ export default function ProfileDashboard() {
     };
 
     const twitter = user?.twitter?.replace(/^@/, "");
+    const youtube = user?.youtube?.replace(/^https?:\/\//, "");
 
     return (
-        <div className="min-h-screen px-6 py-10 text-neutral-200">
-            <div className="max-w-6xl mx-auto space-y-8 ">
-                {/* Identity header */}
-                <div className="flex md:flex-row flex-col items-start gap-6 ">
-                    <div className="relative ">
-                        <img
-                            src={
-                                user.avatar_url
-                                    ? `${user.avatar_url}?v=${user.avatar_changed_at ?? ""}`
-                                    : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username ?? "User")}`
-                            }
-                            alt={user.username}
-                            className="w-28 h-28 rounded-3xl object-cover"
-                        />
-                        {canEdit && (
-                            <button
-                                onClick={() => setAvatarOpen(true)}
-                                className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition flex items-center justify-center rounded-3xl"
-                                aria-label="Change avatar"
-                            >
-                                Change
-                            </button>
-                        )}
-                    </div>
+        <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-8 sm:py-12 text-neutral-200 bg-gradient-to-b">
+            <div className="max-w-6xl mx-auto space-y-10">
 
-                    <div className="flex-1">
-                        <div className="flex items-center justify-between gap-4">
-                            <div>
-                                <h1 className="text-2xl font-semibold">{user.username}
-                                    <span className="ml-2 font-bold text-9xl text-orange-400 inline-block w-2 h-2 rounded-full bg-orange-400"></span>
-                                </h1>
-                                {user.bio && <p className="text-sm text-zinc-400 mt-1 max-w-xl">{user.bio}</p>}
+                {/* Identity header */}
+                <div
+                    className={`flex flex-col gap-6`}
+                >
+                    {/* Left: identity */}
+                    <div className={`flex items-center justify-start w-full ${windowWidth < 640 ? "flex-col" : "flex-row"} gap-6 shrink-0`}>
+                        <div className="flex flex-col gap-6">
+                            <div className={`relative shrink-0 ${windowWidth < 640 ? "mx-auto" : ""}`}>
+                                <div className="grid place-items-center">
+                                    <img
+                                        src={
+                                            user.avatar_url
+                                                ? `${user.avatar_url}?v=${user.avatar_changed_at ?? ""}`
+                                                : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username ?? "User")}`
+                                        }
+                                        alt={user.username}
+                                        className="row-start-1 col-start-1 shrink-0 w-[160px] h-[160px] rounded-3xl object-cover ring-2 ring-white/10 shadow-xl"
+                                    />
+
+                                    {canEdit && (
+                                        <button
+                                            onClick={() => setAvatarOpen(true)}
+                                            className="row-start-1 col-start-1 w-[160px] h-[160px] bg-black/60 opacity-0 hover:opacity-100 transition flex items-center justify-center rounded-3xl text-sm font-medium"
+                                        >
+                                            Change
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
+
+                        </div>
+                        <div className="flex flex-col gap-3">
                             <div>
+                                <h1 className={`text-xl sm:text-2xl font-semibold tracking-tight flex items-baseline gap-2 ${windowWidth < 640 ? "justify-center" : ""}`}>
+                                    {user.username}
+                                    <span className="inline-block w-2 h-2 rounded-full bg-orange-400" />
+                                </h1>
+                                {user.bio && (
+                                    <p className={`text-sm text-zinc-400 mt-1 leading-relaxed ${windowWidth < 640 ? "text-center" : ""}`}>
+                                        {user.bio}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className={`flex gap-2 ${windowWidth < 640 ? "w-full justify-center" : ""}`}>
                                 {canEdit ? (
-                                    <button onClick={() => setEditOpen(true)} className="px-4 py-2 rounded-lg bg-neutral-800">Edit Profile</button>
+                                    <button
+                                        onClick={() => setEditOpen(true)}
+                                        className={`px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 transition text-sm ${windowWidth < 640 ? "w-full text-center" : ""}`}
+                                    >
+                                        Edit Profile
+                                    </button>
                                 ) : (
-                                    <div className="text-sm text-zinc-400">{user.reputation_score ?? 0} rep · {user.reputation_level ?? "--"}</div>
+                                    <div className="text-sm text-zinc-400">
+                                        {user.reputation_score ?? 0} rep · {user.reputation_level ?? "--"}
+                                    </div>
                                 )}
                             </div>
                         </div>
 
-                        <div className="mt-4 grid grid-cols-3 gap-3">
-                            <div className="bg-white/5 p-4 rounded-xl text-center">
-                                <div className="text-2xl font-black">{user.stats?.recipes ?? 0}</div>
-                                <InlineLabel>Recipes</InlineLabel>
+                    </div>
+
+                    {/* Right: stats */}
+                    <div
+                        className={`${windowWidth < 640
+                            ? "w-full grid grid-cols-1"
+                            : "flex-1 grid grid-cols-3"
+                            } gap-3`}
+                    >
+                        {[
+                            ["Recipes", user.stats?.recipes ?? 0],
+                            ["Forks", user.stats?.forks ?? 0],
+                            ["Comments", user.stats?.comments ?? 0],
+                        ].map(([label, value]) => (
+                            <div
+                                key={label}
+                                className="bg-white/5  p-4 rounded-xl text-center border border-white/5 shadow-inner"
+                            >
+                                <div className="text-xl sm:text-2xl font-black">{value}</div>
+                                <InlineLabel>{label}</InlineLabel>
                             </div>
-                            <div className="bg-white/5 p-4 rounded-xl text-center">
-                                <div className="text-2xl font-black">{user.stats?.forks ?? 0}</div>
-                                <InlineLabel>Forks</InlineLabel>
-                            </div>
-                            <div className="bg-white/5 p-4 rounded-xl text-center">
-                                <div className="text-2xl font-black">{user.stats?.comments ?? 0}</div>
-                                <InlineLabel>Comments</InlineLabel>
-                            </div>
-                        </div>
+                        ))}
                     </div>
                 </div>
 
                 {/* Main grid */}
-                <div className="gap-6">
-                    <div className="gap-6 space-y-6">
-                        <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/60 to-black/80 p-6 rounded-2xl border border-white/5">
-                            <h2 className="font-semibold text-lg mb-3">About</h2>
-                            <p className="text-sm text-zinc-400">{user.bio ?? "No bio provided."}</p>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                            <div className="mt-4 grid grid-cols-2 gap-2 text-sm text-zinc-400">
-                                <div>Location: <span className="text-zinc-300">{user.location ?? "--"}</span></div>
-                                <div>Website: <a href={user.website ?? ""} target="_blank" rel="noopener noreferrer" className="text-zinc-300 underline">{user.website ?? "--"}</a></div>
+                    {/* Left column */}
+                    <div className="lg:col-span-2 space-y-6">
+
+                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
+                            <h2 className="font-semibold text-base sm:text-lg mb-3">About</h2>
+                            <p className="text-sm text-zinc-400 leading-relaxed">
+                                {user.bio ?? "No bio provided."}
+                            </p>
+
+                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm text-zinc-400">
+                                <div>Location: <span className="text-zinc-300">{user.location || "--"}</span></div>
                                 <div>
-                                    Twitter:
-                                    {twitter ? (
+                                    Website:{" "}
+                                    {user.website ? (
+                                        <a
+                                            href={user.website}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-zinc-300 underline break-all hover:text-white transition"
+                                        >
+                                            {user.website}
+                                        </a>
+                                    ) : (
+                                        <span className="text-zinc-300">--</span>
+                                    )}
+                                </div>
+                                <div>
+                                    Twitter: {twitter ? (
                                         <a
                                             href={`https://twitter.com/${encodeURIComponent(twitter)}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-zinc-300 underline ml-2"
+                                            className="text-zinc-300 underline ml-1 hover:text-white transition"
                                         >
                                             @{twitter}
                                         </a>
-                                    ) : (
-                                        <span className="text-zinc-300 ml-2">--</span>
-                                    )}
+                                    ) : <span className="text-zinc-300 ml-1">--</span>}
                                 </div>
-                                <div>Joined: <span className="text-zinc-300">{user.created_at ? new Intl.DateTimeFormat('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(user.created_at)) : "--"}</span></div>
+                                <div>
+                                    YouTube: {youtube ? (
+                                        <a
+                                            href={`https://youtube.com/@${encodeURIComponent(youtube)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-zinc-300 underline ml-1 hover:text-white transition"
+                                        >
+                                            @{youtube}
+                                        </a>
+                                    ) : <span className="text-zinc-300 ml-1">--</span>}
+                                </div>
+                                <div className="sm:col-span-2">
+                                    Joined:{" "}
+                                    <span className="text-zinc-300">
+                                        {user.created_at
+                                            ? new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "2-digit" }).format(new Date(user.created_at))
+                                            : "--"}
+                                    </span>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/60 to-black/80 p-6 rounded-2xl border border-white/5">
+                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
                             <h3 className="font-semibold mb-3">Activity</h3>
-                            <ActivityFeed username={user.username ?? (username ?? "")} />
+                            <ActivityFeed username={user.username ?? username ?? ""} />
                         </div>
+                    </div>
 
-                        <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/60 to-black/80 p-6 rounded-2xl border border-white/5">
+                    {/* Right column */}
+                    <div className="space-y-6">
+                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
                             <ReputationBar rep={user.reputation_obj} />
                         </div>
 
-                        <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/60 to-black/80 p-6 rounded-2xl border border-white/5">
+                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
                             <h3 className="font-semibold mb-3">Badges</h3>
                             <BadgesList badges={user.badges ?? []} />
                         </div>
-
-                        {canEdit && (
-                            <div className="bg-gradient-to-br from-neutral-900 via-neutral-900/60 to-black/80 p-6 rounded-2xl border border-white/5">
-                                <SecurityCenterExpanded me={user} />
-                            </div>
-                        )}
-
-                        {canEdit && (
-                            <div className="bg-gradient-to-br from-red-900/30 via-red-900/20 to-black/80 p-6 rounded-2xl border border-red-400/50">
-                                <h3 className="font-semibold">Danger Zone</h3>
-                                <div className="mt-2 text-sm text-zinc-400">Actions here are destructive. You'll be asked to confirm.</div>
-                                <div className="mt-4">
-                                    <button className="bg-red-700/90 px-4 py-2 rounded-xl">Delete account</button>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
-            </div>
 
-            {/* Modals */}
-            {canEdit && <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} user={user} />}
-            {canEdit && <AvatarEditorModal open={avatarOpen} onClose={() => setAvatarOpen(false)} username={user.username ?? username} />}
+                {/* Authorized only */}
+                {canEdit && (
+                    <div className="space-y-6">
+                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
+                            <SecurityCenterExpanded me={user} />
+                        </div>
+
+                        <div className="bg-gradient-to-br from-red-900/30 via-red-900/20 to-black/80  p-5 sm:p-6 rounded-2xl border border-red-400/40 shadow-lg">
+                            <h3 className="font-semibold">Danger Zone</h3>
+                            <p className="mt-2 text-sm text-zinc-400">
+                                Actions here are destructive. You'll be asked to confirm.
+                            </p>
+                            <div className="mt-4">
+                                <button className="bg-red-700/90 hover:bg-red-600 px-4 py-2 rounded-xl text-sm transition">
+                                    Delete account
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modals */}
+                {canEdit && <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} user={user} />}
+                {canEdit && <AvatarEditorModal open={avatarOpen} onClose={() => setAvatarOpen(false)} username={user.username ?? username} />}
+            </div>
         </div>
     );
+
 }

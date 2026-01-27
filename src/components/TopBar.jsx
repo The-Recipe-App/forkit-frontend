@@ -31,7 +31,7 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode }) => {
     const { logout } = useAuthApi();
 
     return (
-        <header className="fixed z-50 w-full min-h-[67px] max-h-[67px] border-b border-gray-700 bg-black/65 backdrop-blur-md px-4 py-2 text-white shadow-lg">
+        <header className="fixed z-[60] w-full min-h-[67px] max-h-[67px] border-b border-gray-700 bg-black/65 backdrop-blur-md px-4 py-2 text-white shadow-lg">
             {/* ───────── MODALS ───────── */}
             <Modal
                 isOpen={showLogout}
@@ -52,7 +52,9 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode }) => {
 
             <Modal
                 isOpen={showAuthGate}
-                showCloseButton
+                onClose={() => setShowAuthGate(false)}
+                enableClose
+                lock={false}
                 type="info"
                 title="Sign in required"
                 description="You need an account to use this feature."
@@ -190,10 +192,10 @@ const ProfileButton = ({ isAuthorized, me, windowWidth, setShowLogout }) => {
     const reduce = useReducedMotion();
 
     const avatarSrc = me?.avatar_url
-    ? `${me.avatar_url}?v=${me.avatar_changed_at ?? ""}`
-    : me?.username
-        ? `https://ui-avatars.com/api/?name=${encodeURIComponent(me.username)}`
-        : null;
+        ? `${me.avatar_url}?v=${me.avatar_changed_at ?? ""}`
+        : me?.username
+            ? `https://ui-avatars.com/api/?name=${encodeURIComponent(me.username)}`
+            : null;
 
 
     useEffect(() => {

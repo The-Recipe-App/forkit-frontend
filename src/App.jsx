@@ -14,6 +14,7 @@ import Recipes from "./pages/Recipes";
 import RecipeDetail from "./pages/RecipeDetail";
 import ForkEditor from "./pages/ForkEditor";
 import ProfileDashboard from "./pages/ProfileDashboard";
+import ActivateAccount from "./pages/ActivateAccount";
 
 function App() {
   const publicRoutes = [
@@ -27,6 +28,7 @@ function App() {
     { path: "/recipes/:id/fork", element: <ForkEditor /> },
     { path: "/profile", element: <ProfileDashboard /> },
     { path: "/profile/:username", element: <ProfileDashboard /> },
+    { path: "/activate-account*", element: <ActivateAccount /> }
   ];
 
 

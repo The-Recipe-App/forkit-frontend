@@ -13,6 +13,7 @@ export const ContextProvider = ({ children }) => {
     const [userName, setUserName] = useState("");
     const location = useLocation();
     const [recipes, setRecipes] = useState([]);
+    const [wantsToActivateAccount, setWantsToActivateAccount] = useState(false);
 
     const navigate = useNavigate();
 
@@ -44,6 +45,12 @@ export const ContextProvider = ({ children }) => {
         } else {
             setWantsToRegister(false);
         }
+    
+        if (location.pathname.startsWith("/activate-account")) {
+            setWantsToActivateAccount(true);
+        } else {
+            setWantsToActivateAccount(false);
+        }
     }, [location, isAuthorized, navigate]);
 
     useEffect(() => {
@@ -61,7 +68,7 @@ export const ContextProvider = ({ children }) => {
 
 
     return (
-        <AppContext.Provider value={{ isLoading, setIsLoading, /*setPageTitle,*/ isAuthorized, setIsAuthorized, role, setRole, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister, recipes, setRecipes, userName, setUserName }}>
+        <AppContext.Provider value={{ isLoading, setIsLoading, /*setPageTitle,*/ isAuthorized, setIsAuthorized, role, setRole, windowWidth, wantsToLogIn, setWantsToLogIn, wantsToRegister, setWantsToRegister, recipes, setRecipes, userName, setUserName, wantsToActivateAccount }}>
             {children}
         </AppContext.Provider>
     );

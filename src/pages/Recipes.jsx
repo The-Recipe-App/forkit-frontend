@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
     Clock,
@@ -10,44 +10,74 @@ import {
 } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
 
+/* ───────────────────────── Lazy Image ───────────────────────── */
+
+function LazyImage({ src, alt, className }) {
+    const [isVisible, setIsVisible] = useState(false);
+    const [loaded, setLoaded] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setIsVisible(true);
+                    observer.disconnect();
+                }
+            },
+            { rootMargin: "200px" }
+        );
+
+        if (ref.current) observer.observe(ref.current);
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <div ref={ref} className="w-full h-full bg-neutral-800 relative overflow-hidden">
+            {isVisible && (
+                <img
+                    src={src}
+                    alt={alt}
+                    loading="lazy"
+                    onLoad={() => setLoaded(true)}
+                    className={`
+                        w-full h-full object-cover transition-opacity duration-500
+                        ${loaded ? "opacity-100" : "opacity-0"}
+                        ${className || ""}
+                    `}
+                />
+            )}
+
+            {!loaded && (
+                <div className="absolute inset-0 animate-pulse bg-neutral-800" />
+            )}
+        </div>
+    );
+}
+
 /* ───────────────────────── Recipe Surface ───────────────────────── */
 
 export default function Recipes() {
     const navigate = useNavigate();
     const [params] = useSearchParams();
     const { isAuthorized, recipes, setRecipes } = useContextManager();
-
     const [loading, setLoading] = useState(true);
 
-    const filters = useMemo(() => {
-        return {
-            difficulty: params.get("difficulty"),
-            tag: params.get("tag"),
-        };
-    }, [params]);
-    
+    const filters = useMemo(() => ({
+        difficulty: params.get("difficulty"),
+        tag: params.get("tag"),
+    }), [params]);
+
     const filteredRecipes = useMemo(() => {
         return recipes.filter(recipe => {
-            if (filters.difficulty && recipe.meta.difficulty !== filters.difficulty) {
-                return false;
-            }
-    
-            if (filters.tag && !recipe.tags.includes(filters.tag)) {
-                return false;
-            }
-    
+            if (filters.difficulty && recipe.meta.difficulty !== filters.difficulty) return false;
+            if (filters.tag && !recipe.tags.includes(filters.tag)) return false;
             return true;
         });
     }, [recipes, filters]);
-    
 
     useEffect(() => {
         setLoading(true);
-
-        const query = Object.fromEntries([...params.entries()]);
-        console.debug("RecipeSurface query:", query);
-
-        // TODO: replace with API
         setTimeout(() => {
             setRecipes(mockRecipes);
             setLoading(false);
@@ -66,28 +96,22 @@ export default function Recipes() {
         <div className="px-6 py-6 max-w-[1500px] mx-auto">
             <SurfaceHeader />
 
-            <section
-    className="
-        grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4
-        gap-6
-    "
->
-    {filteredRecipes.map((recipe) => (
-        <RecipeCard
-            key={recipe.id}
-            recipe={recipe}
-            isAuthorized={isAuthorized}
-            onOpen={() => navigate(`/recipes/${recipe.id}`)}
-        />
-    ))}
+            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredRecipes.map((recipe) => (
+                    <RecipeCard
+                        key={recipe.id}
+                        recipe={recipe}
+                        isAuthorized={isAuthorized}
+                        onOpen={() => navigate(`/recipes/${recipe.id}`)}
+                    />
+                ))}
 
-    {filteredRecipes.length === 0 && (
-        <div className="col-span-full text-center text-neutral-500 py-16">
-            No recipes match these filters.
-        </div>
-    )}
-</section>
-
+                {filteredRecipes.length === 0 && (
+                    <div className="col-span-full text-center text-neutral-500 py-16">
+                        No recipes match these filters.
+                    </div>
+                )}
+            </section>
         </div>
     );
 }
@@ -97,9 +121,7 @@ export default function Recipes() {
 function SurfaceHeader() {
     return (
         <header className="mb-6">
-            <h1 className="text-3xl font-semibold text-white">
-                Recipes
-            </h1>
+            <h1 className="text-3xl font-semibold text-white">Recipes</h1>
             <p className="text-neutral-400 mt-1 max-w-2xl">
                 Recipes evolve here. Fork ideas, improve techniques,
                 and discover what the community is cooking next.
@@ -114,31 +136,22 @@ function RecipeCard({ recipe, isAuthorized, onOpen }) {
     return (
         <article
             onClick={onOpen}
-            className="
-                bg-[#141414] rounded-xl overflow-hidden cursor-pointer
-                hover:bg-[#1b1b1b] transition
-                group relative
-            "
+            className="bg-black/40 rounded-xl overflow-hidden cursor-pointer hover:bg-neutral-700/20 transition group relative"
         >
-            {/* Media */}
             <div className="relative aspect-[4/3] overflow-hidden">
-                <img
+                <LazyImage
                     src={recipe.media.hero_image}
                     alt={recipe.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    className="group-hover:translate-y-[-2px] transition-transform"
                 />
 
                 {recipe.media.has_video && (
-                    <PlayCircle
-                        className="absolute inset-0 m-auto text-white/80"
-                        size={42}
-                    />
+                    <PlayCircle className="absolute inset-0 m-auto text-white/80" size={42} />
                 )}
 
                 <RecipeBadges recipe={recipe} />
             </div>
 
-            {/* Content */}
             <div className="p-4 space-y-3">
                 <TitleBlock recipe={recipe} />
                 <StatsRow recipe={recipe} />
@@ -159,12 +172,8 @@ function RecipeCard({ recipe, isAuthorized, onOpen }) {
 function RecipeBadges({ recipe }) {
     return (
         <div className="absolute top-2 left-2 flex gap-2">
-            {recipe.status.is_trending && (
-                <Badge icon={TrendingUp} label="Trending" />
-            )}
-            {recipe.status.is_verified && (
-                <Badge icon={BadgeCheck} label="Verified" />
-            )}
+            {recipe.status.is_trending && <Badge icon={TrendingUp} label="Trending" />}
+            {recipe.status.is_verified && <Badge icon={BadgeCheck} label="Verified" />}
         </div>
     );
 }
@@ -181,15 +190,11 @@ function Badge({ icon: Icon, label }) {
 function TitleBlock({ recipe }) {
     return (
         <div>
-            <h3 className="text-lg font-medium text-white line-clamp-1">
-                {recipe.title}
-            </h3>
+            <h3 className="text-lg font-medium text-white line-clamp-1">{recipe.title}</h3>
             <p className="text-sm text-neutral-400">
                 by {recipe.author.username}
                 {recipe.lineage.is_fork && (
-                    <span className="ml-2 text-xs text-neutral-500">
-                        · Forked
-                    </span>
+                    <span className="ml-2 text-xs text-neutral-500">· Forked</span>
                 )}
             </p>
         </div>
@@ -215,34 +220,12 @@ function StatsRow({ recipe }) {
     );
 }
 
-const foodTag = (tag) => {
-    const map = {
-        vegetarian: { label: "Vegetarian", icon: "🟢" },
-        vegan: { label: "Vegan", icon: "🌱" },
-        "non-vegetarian": { label: "Non-Veg", icon: "🔴" },
-        nonveg: { label: "Non-Veg", icon: "🔴" },
-    };
-
-    if (!map[tag]) return tag.replace(/\b\w/g, l => l.toUpperCase());
-
-    return (
-        <span className="px-2 py-0.5 rounded text-xs bg-neutral-800 text-neutral-200 flex items-center gap-1">
-            <span>{map[tag].icon}</span>
-            {map[tag].label}
-        </span>
-    );
-};
-
-
 function TagRow({ tags }) {
     return (
         <div className="flex flex-wrap gap-2">
             {tags.map((tag) => (
-                <span
-                    key={tag}
-                    className="px-2 py-0.5 text-xs rounded bg-neutral-800 text-neutral-300"
-                >
-                    {foodTag(tag)}
+                <span key={tag} className="px-2 py-0.5 text-xs rounded bg-neutral-800 text-neutral-300">
+                    {tag}
                 </span>
             ))}
         </div>
@@ -250,6 +233,7 @@ function TagRow({ tags }) {
 }
 
 /* ───────────────────────── Mock Data ───────────────────────── */
+
 
 const mockRecipes = [
     {
@@ -285,7 +269,6 @@ const mockRecipes = [
         },
         timestamps: {},
     },
-
     {
         id: "r2",
         slug: "creamy-garlic-pasta",
@@ -319,7 +302,6 @@ const mockRecipes = [
         },
         timestamps: {},
     },
-
     {
         id: "r3",
         slug: "crispy-chicken-tacos",

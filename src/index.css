@@ -13,6 +13,28 @@
   color: white;
 }
 
+#app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+
+  background: linear-gradient(
+    135deg,
+    rgba(124, 45, 18, 0.4),
+    rgba(23, 23, 23, 0.3),
+    rgba(6, 78, 59, 0.2)
+  );
+
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+body,
+#root {
+  background: #000;
+}
+
 html,
 body,
 #root {

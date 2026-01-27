@@ -161,7 +161,7 @@ export default function LoadingScreen({
 
     return (
         <AnimatePresence>
-            {!shouldExit && (
+            {!window.location.pathname.startsWith("/activate-account") && !shouldExit && (
                 <motion.div
                     role="status"
                     aria-live="polite"

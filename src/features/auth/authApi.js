@@ -47,7 +47,7 @@ export function useAuthApi() {
     // ─────────────────────────────
     function loginWithPassword(identifier, password) {
         return withLoading(async () => {
-            const res = await fetch(`${backendUrlV1}/auth/login`, {
+            const res = await fetch(`${backendUrlV1}/auth/security/login`, {
                 method: "POST",
                 credentials: "include",
                 headers: jsonHeaders(),
@@ -72,7 +72,7 @@ export function useAuthApi() {
     // ─────────────────────────────
     function verifyLoginOtp({ identifier, challenge_id, code }) {
         return withLoading(async () => {
-            const res = await fetch(`${backendUrlV1}/auth/login/verify-otp`, {
+            const res = await fetch(`${backendUrlV1}/auth/security/verify-otp`, {
                 method: "POST",
                 credentials: "include",
                 headers: jsonHeaders(),
@@ -95,7 +95,7 @@ export function useAuthApi() {
     // ─────────────────────────────
     function registerWithPassword(email, password, username = null) {
         return withLoading(async () => {
-            const res = await fetch(`${backendUrlV1}/auth/register`, {
+            const res = await fetch(`${backendUrlV1}/auth/registration/register`, {
                 method: "POST",
                 credentials: "include",
                 headers: jsonHeaders(),
@@ -113,7 +113,7 @@ export function useAuthApi() {
     // ─────────────────────────────
     function getCurrentUser() {
         return withLoading(async () => {
-            const res = await fetch(`${backendUrlV1}/auth/me`, {
+            const res = await fetch(`${backendUrlV1}/auth/security/me`, {
                 credentials: "include",
             });
 
@@ -127,7 +127,7 @@ export function useAuthApi() {
     // ─────────────────────────────
     function logout() {
         return withLoading(async () => {
-            const res = await fetch(`${backendUrlV1}/auth/logout`, {
+            const res = await fetch(`${backendUrlV1}/auth/security/logout`, {
                 method: "POST",
                 credentials: "include",
             });

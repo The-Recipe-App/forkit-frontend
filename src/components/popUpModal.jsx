@@ -257,23 +257,26 @@ export default function Modal({
                             </div>
 
                             {mode === "consent" && consents.length > 0 && (
-                                <div className="space-y-3 mb-6">
-                                    {consents.map(c => (
-                                        <label key={c.id} className="flex gap-3 text-sm text-gray-200 items-start">
-                                            <input
-                                                type="checkbox"
-                                                checked={!!checked[c.id]}
-                                                onChange={e =>
-                                                    setChecked(s => ({ ...s, [c.id]: e.target.checked }))
-                                                }
-                                                className="mt-1"
-                                            />
-                                            <span>
-                                                {c.label}
-                                                {c.required && <span className="text-red-400 ml-1">*</span>}
-                                            </span>
-                                        </label>
-                                    ))}
+                                <div className="mb-6">
+                                    <p className="text-sm text-gray-200 mb-2">By checking each box, you agree to:</p>
+                                    <div className="grid grid-cols-3 items-baseline justify-center space-x-3 ">
+                                        {consents.map(c => (
+                                            <label key={c.id} className="flex gap-3 text-sm text-gray-200 items-start">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!checked[c.id]}
+                                                    onChange={e =>
+                                                        setChecked(s => ({ ...s, [c.id]: e.target.checked }))
+                                                    }
+                                                    className="mt-1"
+                                                />
+                                                <span>
+                                                    {c.label}
+                                                    {c.required && <span className="text-red-400 ml-1">*</span>}
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
 

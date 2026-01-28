@@ -52,7 +52,7 @@ export default function ActivateAccount() {
         async function activate() {
             try {
                 const res = await fetch(
-                    `${backendUrlV1}/auth/activate-account?token=${encodeURIComponent(token)}`,
+                    `${backendUrlV1}/auth/registration/activate-account?token=${encodeURIComponent(token)}`,
                     { method: "GET", credentials: "include", signal: controller.signal }
                 );
 
@@ -176,7 +176,7 @@ export default function ActivateAccount() {
                                 Your account is ready to use.
                             </p>
                             <button
-                                onClick={() => navigate("/")}
+                                onClick={() => window.location.href = "/"}
                                 className="mt-4 px-6 py-2 rounded-lg
                            bg-orange-400/90 text-black
                            text-sm font-medium hover:bg-orange-400 transition"

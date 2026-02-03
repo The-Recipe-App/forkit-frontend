@@ -136,7 +136,11 @@ export function useAuthApi() {
 
             queryClient.removeQueries({ queryKey: ["profile", "me"] });
             queryClient.clear();
-            window.location.reload();
+            if (window.location.pathname.startsWith('/profile')) {
+                window.location.replace('/');
+            } else {
+                window.location.reload();
+            }
         });
     }
 

@@ -113,3 +113,56 @@ body,
 .animate-fadeUp {
   animation: fadeUp 0.5s ease-out forwards;
 }
+
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-pageIn {
+  animation: pageIn .35s ease-out both;
+}
+
+@keyframes fingerprintScan {
+  0% {
+      opacity: 0.4;
+      transform: scale(1);
+  }
+  50% {
+      opacity: 1;
+      transform: scale(1.08);
+  }
+  100% {
+      opacity: 0.4;
+      transform: scale(1);
+  }
+}
+
+.fingerprint-loading {
+  animation: fingerprintScan 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 160ms ease-out;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1 }
+  50% { opacity: 0.6 }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+

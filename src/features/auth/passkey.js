@@ -38,6 +38,21 @@ export async function registerPasskey_1() {
     return options;
 }
 
+export async function ensure_unique_label(label) {
+    const res = await fetch(`${backendUrlV1}/auth/passkey/register/verify-label`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ label }),
+    });
+
+    if (!res.ok) {
+        await parseError(res);
+    } else {
+        return true;
+    }
+}
+
 export async function registerPasskey_2(options, label) {
     const attestation = await startRegistration(options);
 

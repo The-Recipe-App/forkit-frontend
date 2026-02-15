@@ -29,6 +29,18 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        "/admin": {
+          target: "http://127.0.0.1:8000",
+          changeOrigin: false,
+          secure: false,
+          headers: {
+            "Host": "localhost:5173",
+            "X-Forwarded-Host": "localhost:5173",
+            "X-Forwarded-Proto": "http",
+          },
+        },
+
+
       },
     },
 

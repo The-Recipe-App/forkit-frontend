@@ -10,27 +10,21 @@ import {
   Wrench,
   Sparkles,
   Clock,
+  Plus,
+  Filter,
 } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
 
 /**
  * HomeWorkshop.jsx
- * - Mobile-first responsive layout
- * - Data-driven: accepts optional `fetcher` prop (returns { cards, live })
- * - Drop-in replacement for your previous file
+ * - Drop-in replacement (complete file)
+ * - Fully responsive, mobile-first
+ * - Adds: Search bar, category chips, "Create fork" CTA
+ * - Fixes: SectionHeader component name bug, improved keyboard + focus states
  *
- * Usage:
- *  <HomeWorkshop />
- * or
- *  <HomeWorkshop fetcher={myFetchFunction} />
- *
- * myFetchFunction should return a promise resolving to:
- * {
- *   cards: [{ id, title, note, img }],
- *   live: [{ id, title, img }]
- * }
- *
- * If no fetcher is provided, sample data is used.
+ * Notes:
+ * - Tailwind utility classes assumed (mobile-first). If your project uses custom breakpoints,
+ *   tweak classes accordingly.
  */
 
 /* ------------------ Tiny LazyImage (safe for weak devices) ------------------ */
@@ -66,9 +60,7 @@ function LazyImage({ src, alt, className = "", aspectClass = "w-full h-full" }) 
           alt={alt}
           loading="lazy"
           onLoad={() => setLoaded(true)}
-          className={`object-cover w-full h-full transition-opacity duration-300 ${
-            loaded ? "opacity-100" : "opacity-0"
-          }`}
+          className={`object-cover w-full h-full transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
           draggable={false}
         />
       )}
@@ -84,6 +76,11 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
   const [cards, setCards] = useState(null);
   const [live, setLive] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Search and filter state (new)
+  const [query, setQuery] = useState("");
+  const [activeTag, setActiveTag] = useState("All");
+  const TAGS = ["All", "Quick", "Comfort", "Vegan", "Low salt", "Baking"];
 
   // Fetch dynamic data (server integration point)
   useEffect(() => {
@@ -105,12 +102,28 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
     return () => (mounted = false);
   }, [fetcher]);
 
+  // Filtered lists derived from query + tag
+  const filteredCards = (Array.isArray(cards) ? cards : sampleCards()).filter((c) => {
+    const matchesQuery =
+      !query ||
+      c.title.toLowerCase().includes(query.toLowerCase()) ||
+      (c.note && c.note.toLowerCase().includes(query.toLowerCase()));
+    const matchesTag = activeTag === "All" || (c.tags || []).includes(activeTag);
+    return matchesQuery && matchesTag;
+  });
+
+  const filteredLive = (Array.isArray(live) ? live : sampleLive()).filter((r) => {
+    const matchesQuery = !query || r.title.toLowerCase().includes(query.toLowerCase());
+    const matchesTag = activeTag === "All" || (r.tags || []).includes(activeTag);
+    return matchesQuery && matchesTag;
+  });
+
   return (
-    <div className="min-h-screen max-w-[85vw] text-neutral-200 px-4 md:px-8 lg:px-12 py-8">
+    <div className="min-h-screen max-w-[100vw] px-4 md:px-8 lg:px-12 py-8 text-neutral-200 bg-transparent">
       <main className="max-w-[100vw] mx-auto space-y-12">
-        {/* HERO WORKBENCH - stacked on small, 2-col only at xl */}
-        <section className="grid gap-6 xl:grid-cols-2 items-center">
-          <div>
+        {/* HERO WORKBENCH */}
+        <section className="max-w-[100vw] grid gap-6 lg:grid-cols-2 items-start">
+          <div className="pt-2">
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight">
               Recipes as craft.
               <br />
@@ -122,46 +135,87 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
               Change one thing, test it, and the kitchen decides what works.
             </p>
 
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-wrap gap-3 items-center">
               <PrimaryCTA onClick={() => navigate("/recipes")} label="Explore recipes" icon={<Search size={16} />} />
               <SecondaryCTA onClick={() => navigate("/recipes?sort=trending")} label="Trending forks" icon={<TrendingUp size={16} />} />
               {isAuthorized ? (
                 <PrimarySmall onClick={() => navigate("/me/forks")} label="My forks" icon={<GitFork size={14} />} />
               ) : (
-                <SecondaryCTA onClick={() => { localStorage.setItem("redirectAfterLogin", "/"); navigate("/login"); }} label="Sign in to fork" icon={<UserPlus size={16} />} />
+                <SecondaryCTA
+                  onClick={() => {
+                    localStorage.setItem("redirectAfterLogin", "/");
+                    navigate("/login");
+                  }}
+                  label="Sign in to fork"
+                  icon={<UserPlus size={16} />}
+                />
               )}
+
+              {/* New create CTA */}
+              <button
+                onClick={() => navigate("/create")}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500 text-black font-medium hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ml-2"
+                aria-label="Create a new fork"
+              >
+                <Plus size={14} />
+                <span className="text-sm">Create fork</span>
+              </button>
             </div>
 
-            <div className="mt-6 grid grid-cols-3 gap-3 max-w-md text-xs text-neutral-400">
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-md text-xs text-neutral-400">
               <Stat label="Small changes" sub="One tweak at a time" icon={<Wrench size={14} />} />
               <Stat label="Document" sub="Why it changed" icon={<Sparkles size={14} />} />
               <Stat label="Measure" sub="Time, texture, taste" icon={<Clock size={14} />} />
             </div>
+
+            {/* Search + tags (new) */}
+            <div className="mt-6">
+              <SearchBar query={query} setQuery={setQuery} />
+              <div className="mt-3 flex flex-wrap gap-2 items-center">
+                <div className="text-xs text-neutral-400 mr-2">Filter</div>
+                <div className="flex gap-2 flex-wrap">
+                  {TAGS.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setActiveTag(t)}
+                      className={`text-sm py-1 px-3 rounded-full border transition-all focus:outline-none focus-visible:ring-2 ${
+                        activeTag === t
+                          ? "bg-amber-400 text-black border-amber-400"
+                          : "bg-neutral-900 text-neutral-300 border-neutral-700 hover:border-neutral-500"
+                      }`}
+                      aria-pressed={activeTag === t}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Animated workbench visual */}
-          <div className="relative w-full py-6">
-            <WorkbenchVisual cards={cards} loading={loading} />
+          <div className="relative w-full py-2">
+            <WorkbenchVisual cards={filteredCards} loading={loading} />
           </div>
         </section>
 
         {/* WHAT HAPPENS */}
-        <section className="grid gap-6 md:grid-cols-3">
+        <section className="max-w-[100vw] grid gap-6 md:grid-cols-3">
           <SimpleTile icon={<Wrench size={20} />} title="Fork the recipe" caption="Make a copy, change one thing." />
           <SimpleTile icon={<Sparkles size={20} />} title="Test & record" caption="Note results and metrics." />
           <SimpleTile icon={<TrendingUp size={20} />} title="Share & surface" caption="Good forks get noticed." />
         </section>
 
-        {/* LIVE (horizontal scroll on mobile) */}
+        {/* LIVE (horizontal scroll on small, grid on desktop) */}
         <section>
-          <sectionHeader title="Live on the bench" subtitle="Recipes being actively tweaked" />
+          <SectionHeader title="Live on the bench" subtitle="Recipes being actively tweaked" />
           <div className="mt-4">
-            <LiveWorkbench live={live} loading={loading} onOpen={(id) => navigate(`/recipes/${id}`)} />
+            <LiveWorkbench live={filteredLive} loading={loading} onOpen={(id) => navigate(`/recipes/${id}`)} />
           </div>
         </section>
 
         {/* PRINCIPLES */}
-        <section className="bg-[#0b0b0b] border border-white/5 p-6 rounded-xl">
+        <section className="max-w-[100vw] bg-[#0b0b0b] border border-white/5 p-6 rounded-xl">
           <h3 className="text-lg font-semibold">Workshop principles</h3>
           <p className="text-neutral-400 mt-2 max-w-3xl">
             Minimal edits. Explain clearly. Keep lineage. Respect other people’s work.
@@ -175,7 +229,7 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
         </section>
 
         {/* FINAL CTA */}
-        <section className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <section className="max-w-[100vw] flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold">Ready to experiment?</h2>
             <p className="text-neutral-400 mt-2">Fork one recipe, change one thing, test it — see what works.</p>
@@ -193,7 +247,7 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
 
 /* ------------------ WorkbenchVisual (data-driven + responsive) ------------------ */
 function WorkbenchVisual({ cards, loading }) {
-  // fallback sample if data not present, but we keep small to avoid breaking layout
+  // fallback sample if data not present
   const fallback = sampleCards();
   const list = Array.isArray(cards) && cards.length > 0 ? cards : fallback;
 
@@ -205,13 +259,16 @@ function WorkbenchVisual({ cards, loading }) {
         transition={{ duration: 0.45 }}
         className="bg-gradient-to-b from-neutral-900/60 to-neutral-900/0 border border-white/5 rounded-xl p-5"
       >
-        <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-4 px-1">
+        <div className="flex items-start gap-4 overflow-x-auto no-scrollbar py-4 px-1">
           <div className="flex gap-4 items-start">
             {loading ? (
               // simple skeleton while loading
               <div className="flex gap-4">
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="w-[72vw] sm:w-[260px] md:w-[220px] max-w-[320px] bg-neutral-900 rounded-xl p-0">
+                  <div
+                    key={i}
+                    className="min-w-[220px] w-[72vw] sm:w-[260px] md:w-[220px] max-w-[320px] bg-neutral-900 rounded-xl p-0"
+                  >
                     <div className="h-[36vw] sm:h-40 md:h-44 animate-pulse bg-neutral-800 rounded-t-xl" />
                     <div className="p-3">
                       <div className="h-4 w-3/4 bg-neutral-800 animate-pulse rounded mb-2" />
@@ -260,6 +317,7 @@ function WorkbenchVisual({ cards, loading }) {
 
 /* ------------------ Card component ------------------ */
 function Card({ c, index, onClick }) {
+  // responsive width: small phones use vw, larger use fixed min/max to keep layout predictable
   return (
     <motion.div
       whileHover={{ y: -6, scale: 1.02 }}
@@ -267,7 +325,7 @@ function Card({ c, index, onClick }) {
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: 0.06 * index, type: "spring", stiffness: 110, damping: 14 }}
-      className="w-[72vw] sm:w-[260px] md:w-[220px] max-w-[320px] bg-[#070707] border border-white/6 rounded-xl overflow-hidden shadow-sm cursor-pointer"
+      className="min-w-[220px] w-[72vw] sm:w-[260px] md:w-[240px] lg:w-[280px] max-w-[360px] bg-[#070707] border border-white/6 rounded-xl overflow-hidden shadow-sm cursor-pointer"
       role="button"
       tabIndex={0}
       onClick={onClick}
@@ -275,20 +333,18 @@ function Card({ c, index, onClick }) {
         if (e.key === "Enter" || e.key === " ") onClick();
       }}
     >
-      <div className="h-[36vw] sm:h-40 md:h-44">
-        <LazyImage src={c.img} alt={c.title} aspectClass="h-[36vw] sm:h-40 md:h-44" />
+      <div className="h-[36vw] sm:h-40 md:h-44 lg:h-48 xl:h-56">
+        <LazyImage src={c.img} alt={c.title} aspectClass="h-[36vw] sm:h-40 md:h-44 lg:h-48 xl:h-56" />
       </div>
 
       <div className="p-3">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold text-white">{c.title}</div>
-            <div className="text-xs text-neutral-400 mt-1">{c.note}</div>
+            <div className="text-xs text-neutral-400 mt-1 line-clamp-2">{c.note}</div>
           </div>
 
-          {c.id === "best" && (
-            <div className="text-xs bg-amber-400 text-black px-2 py-0.5 rounded-md">Top</div>
-          )}
+          {c.id === "best" && <div className="text-xs bg-amber-400 text-black px-2 py-0.5 rounded-md">Top</div>}
         </div>
 
         <div className="mt-3 flex items-center gap-2 text-xs text-neutral-500">
@@ -302,46 +358,83 @@ function Card({ c, index, onClick }) {
 
 /* ------------------ LiveWorkbench: horizontal list (responsive) ------------------ */
 function LiveWorkbench({ live, loading, onOpen }) {
+  // On medium+ screens show a 2- or 3-column grid instead of horizontal scroll
   const list = Array.isArray(live) && live.length > 0 ? live : sampleLive();
 
   return (
-    <div className="overflow-x-auto no-scrollbar -mx-4 px-4">
-      <div className="flex gap-4 py-2">
-        {loading ? (
-          Array.from({ length: 3 }).map((_, i) => (
-            <article key={i} className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0">
-              <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md animate-pulse bg-neutral-800" />
-              <div className="mt-3">
-                <div className="h-4 w-3/4 bg-neutral-800 rounded mb-2 animate-pulse" />
-                <div className="h-3 w-1/4 bg-neutral-800 rounded animate-pulse" />
-              </div>
-            </article>
-          ))
-        ) : (
-          list.map((r) => (
-            <motion.article
-              key={r.id}
-              whileHover={{ y: -6 }}
-              className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0"
-              onClick={() => onOpen(r.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") onOpen(r.id);
-              }}
-            >
-              <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md">
-                <LazyImage src={r.img} alt={r.title} aspectClass="h-[36vw] sm:h-40 md:h-36" />
-              </div>
-              <div className="mt-3">
-                <div className="text-sm font-medium text-white">{r.title}</div>
-                <div className="text-xs text-neutral-400 mt-1">• active now</div>
-              </div>
-            </motion.article>
-          ))
-        )}
+    <>
+      {/* small screens: horizontal */}
+      <div className="block md:hidden overflow-x-auto no-scrollbar -mx-4 px-4">
+        <div className="flex gap-4 py-2">
+          {loading
+            ? Array.from({ length: 3 }).map((_, i) => (
+                <article key={i} className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0">
+                  <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md animate-pulse bg-neutral-800" />
+                  <div className="mt-3">
+                    <div className="h-4 w-3/4 bg-neutral-800 rounded mb-2 animate-pulse" />
+                    <div className="h-3 w-1/4 bg-neutral-800 rounded animate-pulse" />
+                  </div>
+                </article>
+              ))
+            : list.map((r) => (
+                <motion.article
+                  key={r.id}
+                  whileHover={{ y: -6 }}
+                  className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0"
+                  onClick={() => onOpen(r.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") onOpen(r.id);
+                  }}
+                >
+                  <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md">
+                    <LazyImage src={r.img} alt={r.title} aspectClass="h-[36vw] sm:h-40 md:h-36" />
+                  </div>
+                  <div className="mt-3">
+                    <div className="text-sm font-medium text-white">{r.title}</div>
+                    <div className="text-xs text-neutral-400 mt-1">• active now</div>
+                  </div>
+                </motion.article>
+              ))}
+        </div>
       </div>
-    </div>
+
+      {/* md+ screens: grid */}
+      <div className="hidden md:grid md:grid-cols-3 gap-4">
+        {loading
+          ? Array.from({ length: 3 }).map((_, i) => (
+              <article key={i} className="bg-[#0b0b0b] border border-white/5 rounded-lg p-3">
+                <div className="h-48 overflow-hidden rounded-md animate-pulse bg-neutral-800" />
+                <div className="mt-3">
+                  <div className="h-4 w-3/4 bg-neutral-800 rounded mb-2 animate-pulse" />
+                  <div className="h-3 w-1/4 bg-neutral-800 rounded animate-pulse" />
+                </div>
+              </article>
+            ))
+          : list.map((r) => (
+              <motion.article
+                key={r.id}
+                whileHover={{ y: -6 }}
+                className="bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer"
+                onClick={() => onOpen(r.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") onOpen(r.id);
+                }}
+              >
+                <div className="h-48 overflow-hidden rounded-md">
+                  <LazyImage src={r.img} alt={r.title} aspectClass="h-48" />
+                </div>
+                <div className="mt-3">
+                  <div className="text-sm font-medium text-white">{r.title}</div>
+                  <div className="text-xs text-neutral-400 mt-1">• active now</div>
+                </div>
+              </motion.article>
+            ))}
+      </div>
+    </>
   );
 }
 
@@ -404,7 +497,8 @@ function SimpleTile({ icon, title, caption }) {
   );
 }
 
-function sectionHeader({ title, subtitle }) {
+/* Fix: components must be PascalCase for JSX usage */
+function SectionHeader({ title, subtitle }) {
   return (
     <div className="flex items-center justify-between">
       <div>
@@ -451,6 +545,35 @@ function WorkbenchConnector({ count = 4 }) {
   );
 }
 
+/* ------------------ SearchBar (new, accessible) ------------------ */
+function SearchBar({ query, setQuery }) {
+  return (
+    <div className="flex items-center gap-2">
+      <label htmlFor="hw-search" className="sr-only">Search recipes</label>
+      <div className="relative w-full max-w-md">
+        <input
+          id="hw-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search recipes, notes, forks..."
+          className="w-full pl-10 pr-3 py-2 rounded-md bg-neutral-900 border border-neutral-800 text-sm text-neutral-200 placeholder:text-neutral-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+        />
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-500">
+          <Search size={16} />
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-label="Advanced filters"
+        className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-neutral-800 text-sm text-neutral-200 hover:bg-neutral-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+      >
+        <Filter size={14} />
+        <span className="hidden sm:inline">Filters</span>
+      </button>
+    </div>
+  );
+}
+
 /* ------------------ Helpers & default fetcher ------------------ */
 function sampleCards() {
   return [
@@ -459,34 +582,38 @@ function sampleCards() {
       title: "Original",
       note: "Baseline",
       img: "https://images.unsplash.com/photo-1546069901-eacef0df6022?q=80&w=1200&auto=format&fit=crop",
+      tags: ["All", "Comfort"],
     },
     {
       id: "fork1",
       title: "Fork: crisp edge",
       note: "+ sear 30s",
       img: "https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=1200&auto=format&fit=crop",
+      tags: ["All", "Quick"],
     },
     {
       id: "fork2",
       title: "Fork: less salt",
       note: "- 20% salt",
       img: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?q=80&w=1200&auto=format&fit=crop",
+      tags: ["All", "Low salt"],
     },
     {
       id: "best",
       title: "Rising",
       note: "Most used",
       img: "https://images.unsplash.com/photo-1512058564366-c9e3b6f7b0bd?q=80&w=1200&auto=format&fit=crop",
+      tags: ["All"],
     },
   ];
 }
 
 function sampleLive() {
   return [
-    { id: "r1", title: "Smash Burger — sear tweak", img: "https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=800&auto=format&fit=crop" },
-    { id: "r4", title: "Ramen — chili oil ratio", img: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?q=80&w=800&auto=format&fit=crop" },
-    { id: "r2", title: "Garlic pasta — low heat", img: "https://images.unsplash.com/photo-1525755662778-989d0524087e?q=80&w=800&auto=format&fit=crop" },
-    { id: "r5", title: "Buddha bowl — roast nuance", img: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?q=80&w=800&auto=format&fit=crop" },
+    { id: "r1", title: "Smash Burger — sear tweak", img: "https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=800&auto=format&fit=crop", tags: ["All", "Quick"] },
+    { id: "r4", title: "Ramen — chili oil ratio", img: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?q=80&w=800&auto=format&fit=crop", tags: ["All", "Comfort"] },
+    { id: "r2", title: "Garlic pasta — low heat", img: "https://images.unsplash.com/photo-1525755662778-989d0524087e?q=80&w=800&auto=format&fit=crop", tags: ["All", "Vegan"] },
+    { id: "r5", title: "Buddha bowl — roast nuance", img: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?q=80&w=800&auto=format&fit=crop", tags: ["All", "Vegan"] },
   ];
 }
 
@@ -503,8 +630,7 @@ function defaultFetcher() {
   });
 }
 
-/* ------------------ styles: hide native scrollbar for horizontal lists ------------------ */
-/* inject once (keeps tiny fallback) */
+/* ------------------ styles: hide native scrollbar for horizontal lists (inject once) ------------------ */
 if (typeof document !== "undefined" && !document.head.querySelector("[data-workbench-style]")) {
   const styleTag = document.createElement("style");
   styleTag.setAttribute("data-workbench-style", "true");
@@ -512,6 +638,8 @@ if (typeof document !== "undefined" && !document.head.querySelector("[data-workb
     .no-scrollbar::-webkit-scrollbar { height: 8px; }
     .no-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.04); border-radius: 8px; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: thin; }
+    /* small helper to clamp long notes if line-clamp plugin not present */
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   `;
   document.head.appendChild(styleTag);
 }

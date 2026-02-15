@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import backendUrlV1 from "../../urls/backendUrl";
 import { useContextManager } from "../ContextProvider";
+import { supabase } from "../../lib/supabase";
 
 /* -------------------------
    Helpers
@@ -20,8 +21,8 @@ async function parseJsonSafe(res) {
 
 function extractErrorMessage(data, fallback) {
     if (!data) return fallback;
-    if (typeof data.detail === "string") return data.detail;
-    if (Array.isArray(data.detail)) return data.detail.map(d => d.msg).join(", ");
+    if (typeof data.message === "string") return data.message;
+    if (Array.isArray(data.message)) return data.message.map(d => d.msg).join(", ");
     return fallback;
 }
 
@@ -127,6 +128,7 @@ export function useAuthApi() {
     // ─────────────────────────────
     function logout() {
         return withLoading(async () => {
+            //await supabase.auth.signOut();
             const res = await fetch(`${backendUrlV1}/auth/security/logout`, {
                 method: "POST",
                 credentials: "include",

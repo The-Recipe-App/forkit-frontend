@@ -107,10 +107,19 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode }) => {
                     <div className="relative w-[45%] max-w-[400px]">
                         <Search size={18} className="absolute left-4 top-3 text-gray-400" />
                         <input
+                            aria-autocomplete={false}
                             type="search"
+                            name="q"
+                            data-lpignore="true"
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            inputMode="search"
                             placeholder="Search recipes, techniques, cooks…"
                             className="w-full pl-12 pr-4 py-2.5 rounded-full bg-neutral-800/70 border border-gray-600 placeholder-neutral-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
                         />
+
                     </div>
                 )}
 

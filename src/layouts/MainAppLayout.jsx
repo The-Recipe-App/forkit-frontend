@@ -36,6 +36,10 @@ const MainAppLayout = () => {
     }, [me, isError, meLoading]);
 
     useEffect(() => {
+        if (!localStorage.getItem("device_fp")) {
+            localStorage.setItem("device_fp", crypto.randomUUID());
+        }
+
         const handleResize = () => {
             setNavOpen((prev) => (window.innerWidth > 1024 ? true : prev && window.innerWidth > 1024));
         };

@@ -4,7 +4,7 @@ import backendUrlV1 from "../urls/backendUrl";
 export function useMe(enabled = true) {
     return useQuery({
         queryKey: ["profile", "me"],
-        enabled,
+        enabled: window.location.pathname !== "/oauth/callback",
         queryFn: async () => {
             const res = await fetch(`${backendUrlV1}/profile/me`, {
                 credentials: "include",

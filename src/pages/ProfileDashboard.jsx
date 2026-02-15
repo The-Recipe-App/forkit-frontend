@@ -4,10 +4,16 @@ import { useParams, useNavigate } from "react-router-dom";
 import backendUrlV1 from "../urls/backendUrl";
 import { useMe } from "../hooks/useMe";
 import Cropper from "react-easy-crop";
-import { Upload } from "lucide-react";
+import { Upload, Edit2, ShieldCheck, Trash2, Settings } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
-import { registerPasskey_1, registerPasskey_2 } from "../features/auth/passkey";
-import Modal from "../components/popUpModal";
+import { lazy, Suspense } from "react";
+import LazyErrorBoundary from "../components/lazyLoadError";
+import PanelSkeleton from "../components/PanelSkeleton";
+import SoftCrashPanel from "../components/SoftCrashPanel";
+
+const SecurityCenterExpanded = lazy(() =>
+    import("../components/profile/SecurityPanel")
+);
 
 /* ------------------------- Utility: debounce hook ------------------------- */
 function useDebounced(value, ms = 400) {
@@ -20,13 +26,6 @@ function useDebounced(value, ms = 400) {
 }
 
 /* ------------------------- Username availability (debounced, robust) ------------------------- */
-/*
-  NOTE: server snippet you provided doesn't include a /profile/username/check endpoint.
-  This implementation uses GET /profile/{username}: 404 => available, 200 => taken.
-  It also enforces client-side format validation that matches the server regex:
-  /^[a-zA-Z0-9_]{3,30}$/
-*/
-
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,30}$/;
 
 export function useUsernameAvailabilitySimple(username, enabled = true) {
@@ -41,12 +40,10 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
             return;
         }
 
-
         if (!USERNAME_RE.test(debounced)) {
             setStatus("invalid");
             return;
         }
-
 
         controller.current?.abort();
         const ctrl = new AbortController();
@@ -54,7 +51,6 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
 
         let mounted = true;
         setStatus("checking");
-
 
         fetch(`${backendUrlV1}/profile/${encodeURIComponent(debounced)}`, {
             method: "GET",
@@ -76,7 +72,6 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
             })
             .catch((err) => {
                 if (err.name === "AbortError") return;
-
                 setStatus(null);
             });
 
@@ -89,346 +84,42 @@ export function useUsernameAvailabilitySimple(username, enabled = true) {
     return status;
 }
 
-/* ------------------------- Small UI atoms ------------------------- */
-function LoadingBox({ children }) {
-    return <div className="p-8 bg-white/5 rounded-xl text-center">{children}</div>;
-}
-
-function InlineLabel({ children }) {
-    return <div className="text-xs text-zinc-400 uppercase">{children}</div>;
-}
-
-/* ------------------------- Reputation bar ------------------------- */
+/* ------------------------- Reputation bar (refreshed visuals) ------------------------- */
 function ReputationBar({ rep = {} }) {
-    const pct = Math.max(0, Math.min(100, rep.progress_pct ?? 0));
+    const pct = Math.max(0, Math.min(100, rep.progress_pct ?? 0.5));
 
     return (
-        <div className="bg-white/5 p-4 rounded-2xl">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="p-4 rounded-2xl">
+            <div className="flex items-center justify-between gap-3">
                 <div>
                     <div className="text-xs text-zinc-400">Reputation</div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-base sm:text-lg">
+                    <div className="flex items-center gap-3">
+                        <div className="text-2xl font-bold tracking-tight">
                             {(rep.score ?? 0).toLocaleString()}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10">
+                        </div>
+                        <div className="text-xs px-2 py-0.5 rounded-full bg-white/6">
                             {rep.level ?? "--"}
-                        </span>
+                        </div>
                     </div>
                 </div>
 
-                <div className="text-xs text-zinc-400">
-                    Next: <span className="text-zinc-300">{rep.next_level ?? "--"}</span>
+                <div className="text-xs text-zinc-400 text-right">
+                    Next: <div className="text-zinc-200">{rep.next_level ?? "--"}</div>
                 </div>
             </div>
 
-            <div className="mt-3">
-                <div className="bg-white/10 h-2.5 rounded-full overflow-hidden">
+            <div className="mt-4">
+                <div className="bg-white/6 h-3 rounded-full overflow-hidden relative">
                     <div
                         style={{ width: `${pct}%` }}
-                        className="h-full bg-gradient-to-r from-orange-500 to-yellow-400 transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-orange-700 via-orange-400 to-orange-200 shadow-[0_6px_20px_rgba(250,204,21,0.12)] transition-all duration-700"
                     />
                 </div>
-                <div className="mt-1 text-[11px] text-zinc-400">
-                    {pct.toFixed(2)}% to next level
-                </div>
+                <div className="mt-2 text-[12px] text-zinc-400">{pct.toFixed(2)}% of the way to the next level</div>
             </div>
         </div>
     );
 }
-
-/* ------------------------- Security center (expanded) ------------------------- */
-function SecurityCenterExpanded() {
-    const qc = useQueryClient();
-    const [confirm, setConfirm] = useState(null); // { type, id }
-    const [working, setWorking] = useState(false);
-
-    const [alertModal, setAlertModal] = useState(false);
-    const [alertModalTitle, setAlertModalTitle] = useState(null);
-    const [alertModalMessage, setAlertModalMessage] = useState(null);
-
-    const [labelModalOpen, setLabelModalOpen] = useState(false);
-    const [newPasskeyLabel, setNewPasskeyLabel] = useState("");
-    const [pendingOptions, setPendingOptions] = useState(null);
-
-
-    const securityQuery = useQuery({
-        queryKey: ["security", "me"],
-        queryFn: async () => {
-            const res = await fetch(`${backendUrlV1}/profile/me/security`, {
-                credentials: "include",
-            });
-            if (!res.ok) throw new Error("Failed to load security info");
-            return res.json();
-        },
-        staleTime: 60_000,
-    });
-
-    const revokeDevice = async (id) => {
-        setWorking(true);
-        await fetch(`${backendUrlV1}/profile/me/devices/${id}/revoke`, {
-            method: "POST",
-            credentials: "include",
-        });
-        await qc.invalidateQueries({ queryKey: ["security", "me"] });
-        setWorking(false);
-        setConfirm(null);
-    };
-
-    const revokeOthers = async () => {
-        setWorking(true);
-        await fetch(`${backendUrlV1}/profile/me/devices/revoke-others`, {
-            method: "POST",
-            credentials: "include",
-        });
-        await qc.invalidateQueries({ queryKey: ["security", "me"] });
-        setWorking(false);
-        setConfirm(null);
-    };
-
-    const removePasskey = async (id) => {
-        setWorking(true);
-        await fetch(`${backendUrlV1}/auth/passkey/${id}`, {
-            method: "DELETE",
-            credentials: "include",
-        });
-        await qc.invalidateQueries({ queryKey: ["security", "me"] });
-        setWorking(false);
-        setConfirm(null);
-    };
-
-    if (securityQuery.isLoading) {
-        return <div className="p-6 text-sm text-zinc-400">Loading security…</div>;
-    }
-
-    const { email, devices = [], passkeys = [], current_device_id } =
-        securityQuery.data || {};
-
-    const parseUA = (ua = "") => {
-        if (/windows/i.test(ua)) return "Windows";
-        if (/mac os/i.test(ua)) return "macOS";
-        if (/iphone|ipad/i.test(ua)) return "iOS";
-        if (/android/i.test(ua)) return "Android";
-        if (/linux/i.test(ua)) return "Linux";
-        return "Unknown OS";
-    };
-
-    return (
-        <section className="rounded-3xl p-6 border border-white/10 space-y-6">
-            {/* CONFIRM MODAL */}
-            <Modal
-                isOpen={!!confirm}
-                lock
-                type="warning"
-                title="Confirm action"
-                description={
-                    confirm?.type === "device"
-                        ? "This will sign out this device."
-                        : confirm?.type === "others"
-                            ? "This will sign out all other devices."
-                            : "This will permanently remove this passkey."
-                }
-                primaryAction={{
-                    label: working ? "Working…" : "Confirm",
-                    onClick: () => {
-                        if (confirm.type === "device") revokeDevice(confirm.id);
-                        if (confirm.type === "others") revokeOthers();
-                        if (confirm.type === "passkey") removePasskey(confirm.id);
-                    },
-                }}
-                secondaryAction={{
-                    label: "Cancel",
-                    onClick: () => setConfirm(null),
-                }}
-            />
-
-            <Modal
-                isOpen={alertModal}
-                lock
-                type="error"
-                title={alertModalTitle}
-                description={alertModalMessage}
-                secondaryAction={{
-                    label: "Close",
-                    onClick: () => {
-                        setAlertModalTitle(null);
-                        setAlertModalMessage(null);
-                        setAlertModal(false);
-                    },
-                }}
-            />
-
-            <Modal
-                isOpen={labelModalOpen}
-                lock
-                type="info"
-                title="Name this passkey"
-                description="This helps you recognize this device later."
-                primaryAction={{
-                    label: working ? "Saving…" : "Save Passkey",
-                    onClick: async () => {
-                        if (!newPasskeyLabel.trim() || !pendingOptions) return;
-
-                        try {
-                            setWorking(true);
-                            await registerPasskey_2(pendingOptions, newPasskeyLabel.trim());
-                            setLabelModalOpen(false);
-                            setPendingOptions(null);
-                            qc.invalidateQueries({ queryKey: ["security", "me"] });
-                        } catch (e) {
-                            setAlertModalTitle("Passkey registration failed");
-                            setAlertModalMessage(e.message || "Verification failed");
-                            setAlertModal(true);
-                        } finally {
-                            setWorking(false);
-                        }
-                    }
-                }}
-                secondaryAction={{
-                    label: "Cancel",
-                    onClick: () => {
-                        setLabelModalOpen(false);
-                        setPendingOptions(null);
-                    }
-                }}
-            >
-                <div className="w-full p-2">
-                    <input
-                        autoFocus
-                        className="input-dark w-full"
-                        placeholder="e.g. Work Laptop, Personal Phone"
-                        value={newPasskeyLabel}
-                        onChange={(e) => setNewPasskeyLabel(e.target.value)}
-                    />
-                </div>
-            </Modal>
-
-
-
-            <h3 className="text-lg font-bold">Security</h3>
-
-            {/* EMAIL */}
-            <div className="p-4 bg-white/5 rounded-lg">
-                <div className="font-semibold">Primary Email</div>
-                <div className="text-sm text-zinc-400">{email}</div>
-            </div>
-
-            {/* PASSKEYS */}
-            <div className="p-4 bg-white/5 rounded-lg">
-                <div className="flex items-center justify-between">
-                    <div className="font-semibold">Passkeys</div>
-                    <button
-                        className="btn-primary"
-                        onClick={async () => {
-                            try {
-                                const options = await registerPasskey_1();
-                                setPendingOptions(options);
-                                setNewPasskeyLabel("");
-                                setLabelModalOpen(true);
-                            } catch (e) {
-                                setAlertModalTitle("Failed to start passkey registration");
-                                setAlertModalMessage(e.message || "Failed to register passkey");
-                                setAlertModal(true);
-                            }
-                        }}
-                    >
-                        Add Passkey
-                    </button>
-
-                </div>
-
-                <div className="mt-3 space-y-2">
-                    {passkeys.length === 0 && (
-                        <div className="text-sm text-zinc-500">No passkeys registered</div>
-                    )}
-
-                    {passkeys.map((pk) => (
-                        <div
-                            key={pk.id}
-                            className="flex items-center justify-between text-sm bg-black/30 rounded-md px-3 py-2"
-                        >
-                            <div>
-                                <div className="font-medium">
-                                    {pk.name}
-                                    {pk.is_current && (
-                                        <span className="ml-2 text-xs text-green-400">(This device)</span>
-                                    )}
-                                </div>
-                                <div className="text-xs text-zinc-500">
-                                    Added {new Date(pk.created_at).toLocaleDateString()}
-                                </div>
-                            </div>
-                            <button
-                                className="text-red-400 text-xs hover:underline"
-                                onClick={() =>
-                                    setConfirm({ type: "passkey", id: pk.id })
-                                }
-                            >
-                                Remove
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* DEVICES */}
-            <div className="p-4 bg-white/5 rounded-lg">
-                <div className="flex items-center justify-between">
-                    <div className="font-semibold">Devices</div>
-                    <button
-                        className="text-sm text-red-400 hover:underline"
-                        onClick={() => setConfirm({ type: "others" })}
-                    >
-                        Sign out all other devices
-                    </button>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                    {devices.map((d) => {
-                        return (
-                            <div
-                                key={d.id}
-                                className="flex items-center justify-between text-sm bg-black/30 rounded-md px-3 py-2"
-                            >
-                                <div>
-                                    <div className="font-medium">
-                                        {parseUA(d.user_agent)}
-                                        {d.is_current && (
-                                            <span className="ml-2 text-xs text-green-400">
-                                                (This device)
-                                            </span>
-                                        )}
-                                        {d.is_trusted && (
-                                            <span className="ml-2 text-xs text-blue-400">
-                                                Trusted
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="text-xs text-zinc-500">
-                                        Last used{" "}
-                                        {new Date(d.last_seen_at).toLocaleString()}
-                                    </div>
-                                </div>
-
-                                {!d.is_current && (
-                                    <button
-                                        className="text-red-400 text-xs hover:underline"
-                                        onClick={() =>
-                                            setConfirm({ type: "device", id: d.id })
-                                        }
-                                    >
-                                        Sign out
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        </section>
-    );
-}
-
 
 /* ------------------------- Badges list ------------------------- */
 function BadgesList({ badges = [] }) {
@@ -436,7 +127,7 @@ function BadgesList({ badges = [] }) {
     return (
         <div className="flex gap-2 flex-wrap">
             {badges.map((b) => (
-                <div key={b.code} className="px-3 py-1 rounded-full bg-white/5 text-sm">
+                <div key={b.code} className="px-3 py-1 rounded-full bg-white/6 text-sm">
                     <strong className="mr-2">{b.title}</strong>
                     <span className="text-xs text-zinc-400">{b.awarded_at ? new Date(b.awarded_at).toLocaleDateString() : ""}</span>
                 </div>
@@ -445,7 +136,6 @@ function BadgesList({ badges = [] }) {
     );
 }
 
-
 /* ------------------------- Activity feed (safe) ------------------------- */
 function ActivityFeed({ username }) {
     const q = useQuery({
@@ -453,7 +143,6 @@ function ActivityFeed({ username }) {
         enabled: Boolean(username),
         queryFn: async () => {
             const res = await fetch(`${backendUrlV1}/profile/${encodeURIComponent(username)}/activity`, { credentials: "include" });
-
             if (!res.ok) return [];
             return res.json();
         },
@@ -461,7 +150,14 @@ function ActivityFeed({ username }) {
         staleTime: 1000 * 60 * 5,
     });
 
-    if (q.isLoading) return <LoadingBox>Loading activity…</LoadingBox>;
+    if (q.isLoading) {
+        return (
+            <div className="p-6 rounded-xl bg-white/3 flex flex-col items-center gap-3">
+                <div className="h-9 w-9 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+                <span className="text-sm text-white/70">Loading activity…</span>
+            </div>
+        );
+    };
     if (q.isError) return <div className="text-sm text-zinc-500">Activity not available</div>;
 
     const items = q.data || [];
@@ -470,7 +166,7 @@ function ActivityFeed({ username }) {
     return (
         <div className="space-y-3">
             {items.map((it, idx) => (
-                <div key={idx} className="p-3 bg-white/3 rounded-lg">
+                <div key={idx} className="p-3 bg-white/4 rounded-lg">
                     <div className="text-sm font-semibold">{it.title}</div>
                     <div className="text-xs text-zinc-400">{it.when ? new Date(it.when).toLocaleString() : ""}</div>
                 </div>
@@ -479,8 +175,7 @@ function ActivityFeed({ username }) {
     );
 }
 
-/* ------------------------- Edit Profile Modal ------------------------- */
-const TWITTER_RE = /^[A-Za-z0-9_]{0,15}$/;
+/* ------------------------- Edit Profile Modal (unchanged logic, refreshed look) ------------------------- */
 
 function EditProfileModal({ open, onClose, user }) {
     const qc = useQueryClient();
@@ -498,7 +193,6 @@ function EditProfileModal({ open, onClose, user }) {
 
     const [form, setForm] = useState(buildInitialForm);
     const [serverError, setServerError] = useState(null);
-    const [cooldown, setCooldown] = useState(null);
     const [shake, setShake] = useState(false);
 
     const originalUsername = user.username;
@@ -507,7 +201,6 @@ function EditProfileModal({ open, onClose, user }) {
         if (!open) return;
         setForm(buildInitialForm());
         setServerError(null);
-        setCooldown(null);
         setShake(false);
         setTimeout(() => usernameRef.current?.focus(), 80);
     }, [open, user]);
@@ -523,8 +216,7 @@ function EditProfileModal({ open, onClose, user }) {
     const canSave =
         open &&
         isDirty &&
-        (!isUsernameChanged || usernameStatus === "available") &&
-        !cooldown;
+        (!isUsernameChanged || usernameStatus === "available")
 
     const mutation = useMutation(
         async (payload) => {
@@ -547,26 +239,12 @@ function EditProfileModal({ open, onClose, user }) {
             onSuccess: () => {
                 qc.invalidateQueries({ queryKey: ["profile", "me"] });
                 qc.invalidateQueries({ queryKey: ["profile"] });
-
                 if (form.username !== originalUsername) {
                     navigate(`/profile/${encodeURIComponent(form.username)}`, { replace: true });
                 }
-
                 onClose();
             },
             onError: (err) => {
-                if (err.status === 429) {
-                    setCooldown(30);
-                    const t = setInterval(() => {
-                        setCooldown((c) => {
-                            if (c <= 1) {
-                                clearInterval(t);
-                                return null;
-                            }
-                            return c - 1;
-                        });
-                    }, 1000);
-                }
 
                 setServerError(err.message || "Save failed");
                 setShake(true);
@@ -593,27 +271,18 @@ function EditProfileModal({ open, onClose, user }) {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm grid place-items-center z-50 px-4">
             <div
                 className={`
-                    relative w-full max-w-lg
+                    relative w-full max-w-2xl mt-7
                     rounded-2xl
                     bg-gradient-to-br from-neutral-900/80 via-neutral-800/70 to-neutral-900/80
-                    backdrop-blur-sm
-                    border border-white/10
-                    shadow-2xl shadow-black/60
-                    ring-1 ring-white/5
+                    border border-neutral-700
                     p-6
                     ${shake ? "animate-shake" : ""}
                 `}
             >
-                <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+                <h3 className="text-xl font-semibold tracking-wide mb-4 text-white">Edit Profile</h3>
 
-                <h3 className="text-lg font-semibold tracking-wide mb-4 text-white">
-                    Edit Profile
-                </h3>
-
-                <div className="max-h-[calc(100vh-280px)] overflow-y-auto forkit-scroll pl-1 pr-3">
-
+                <div className="max-h-[calc(100vh-260px)] overflow-y-auto space-y-4 px-2">
                     {serverError && <div className="mb-2 text-sm text-red-400">{serverError}</div>}
-                    {cooldown && <div className="mb-2 text-xs text-yellow-400">Try again in {cooldown}s</div>}
 
                     <label className="text-sm mb-1 block">Username</label>
                     <input
@@ -629,9 +298,7 @@ function EditProfileModal({ open, onClose, user }) {
                         {isUsernameChanged && usernameStatus === "invalid" && <span className="text-yellow-400">3-30 chars, letters, numbers, underscore</span>}
                     </div>
 
-                    <label className="text-sm mt-4 mb-1 block">
-                        Bio <span className="text-xs text-zinc-400">({form.bio.length}/160)</span>
-                    </label>
+                    <label className="text-sm mt-4 mb-1 block">Bio <span className="text-xs text-zinc-400">({form.bio.length}/160)</span></label>
                     <textarea
                         maxLength={160}
                         className="input-dark w-full h-24 resize-none"
@@ -719,7 +386,6 @@ function EditProfileModal({ open, onClose, user }) {
                         onClick={() => {
                             setForm(buildInitialForm());
                             setServerError(null);
-                            setCooldown(null);
                             setShake(false);
                             onClose();
                         }}
@@ -729,13 +395,7 @@ function EditProfileModal({ open, onClose, user }) {
                     </button>
 
                     <button
-                        className="
-                            px-5 py-2 rounded-lg text-sm font-medium text-neutral-900
-                            bg-gradient-to-r from-orange-500 to-orange-600
-                            hover:from-orange-600 hover:to-orange-500
-                            disabled:opacity-50 disabled:cursor-not-allowed
-                            transition
-                        "
+                        className="px-5 py-2 rounded-lg text-sm font-medium text-neutral-900 bg-amber-400 hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed transition"
                         disabled={!canSave || mutation.isLoading}
                         onClick={() => {
                             const payload = Object.fromEntries(
@@ -752,7 +412,7 @@ function EditProfileModal({ open, onClose, user }) {
     );
 }
 
-/* ------------------------- Avatar Editor (production-ready) ------------------------- */
+/* ------------------------- Avatar Editor (kept logic, nicer UI) ------------------------- */
 
 function getCroppedImage(imageSrc, crop) {
     return new Promise((resolve) => {
@@ -780,7 +440,6 @@ function getCroppedImage(imageSrc, crop) {
         };
     });
 }
-
 
 function AvatarEditorModal({ open, onClose, username }) {
     const qc = useQueryClient();
@@ -861,20 +520,13 @@ function AvatarEditorModal({ open, onClose, username }) {
 
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm grid place-items-center z-50 px-4">
-            <div className="relative w-full max-w-lg
-                    rounded-2xl
-                    bg-gradient-to-br from-neutral-900/80 via-neutral-800/70 to-neutral-900/80
-                    backdrop-blur-sm
-                    border border-white/10
-                    shadow-2xl shadow-black/60
-                    ring-1 ring-white/5
-                    p-6">
+            <div className="relative w-full max-w-lg rounded-2xl bg-gradient-to-br from-neutral-900/80 via-neutral-800/70 to-neutral-900/80 border border-neutral-700 p-6">
                 <h3 className="text-lg font-semibold mb-3">Edit Avatar</h3>
 
                 {error && <div className="text-red-400 text-sm mb-3">{error}</div>}
 
                 {!imageSrc && (
-                    <label className="relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-zinc-700 rounded-xl cursor-pointer bg-neutral-800/50 hover:bg-neutral-800/80 transition">
+                    <label className="relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-zinc-700 rounded-xl cursor-pointer bg-neutral-800/50 hover:bg-neutral-800/70 transition">
                         <div className="flex flex-col items-center text-center px-4">
                             <Upload className="w-6 h-6 text-zinc-400 mb-2" />
                             <p className="text-sm text-zinc-300">
@@ -920,7 +572,7 @@ function AvatarEditorModal({ open, onClose, username }) {
                                 step={0.01}
                                 value={zoom}
                                 onChange={(e) => setZoom(Number(e.target.value))}
-                                className="w-full accent-white"
+                                className="w-full accent-amber-400"
                             />
                         </div>
 
@@ -949,9 +601,10 @@ function AvatarEditorModal({ open, onClose, username }) {
     );
 }
 
+/* ------------------------- Loading & NotFound (refreshed) ------------------------- */
 const ProfileLoading = () => (
     <div className="flex justify-center items-center min-h-[50vh]">
-        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-xl animate-pulse">
+        <div className="w-full max-w-md rounded-2xl border border-neutral-700 bg-gradient-to-br from-neutral-900/70 to-neutral-800/50 p-8 shadow-xl animate-pulse">
             <div className="h-6 w-1/2 bg-white/10 rounded mb-6" />
             <div className="h-4 w-full bg-white/10 rounded mb-3" />
             <div className="h-4 w-5/6 bg-white/10 rounded mb-3" />
@@ -962,39 +615,47 @@ const ProfileLoading = () => (
 
 const ProfileNotFound = () => (
     <div className="flex justify-center items-center min-h-[60vh] px-6">
-        <div className="max-w-md w-full rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-10 shadow-2xl text-center animate-fadeIn">
+        <div className="max-w-md w-full rounded-2xl border border-neutral-700 bg-gradient-to-br from-neutral-900/60 to-neutral-800/40 p-10 text-center">
             <div className="text-5xl mb-4">😕</div>
-            <h2 className="text-xl font-semibold text-white mb-2">
-                Profile Not Found
-            </h2>
-            <p className="text-sm text-white/60 mb-6">
-                The user you're looking for doesn't exist or may have been removed.
-            </p>
-
+            <h2 className="text-xl font-semibold text-white mb-2">Profile Not Found</h2>
+            <p className="text-sm text-white/60 mb-6">The user you're looking for doesn't exist or may have been removed.</p>
             <button
                 onClick={() => window.history.back()}
-                className="px-5 py-2 rounded-xl bg-orange-500/90 hover:bg-orange-500 text-white font-medium transition"
+                className="px-5 py-2 rounded-xl bg-amber-400 hover:brightness-95 text-neutral-900 font-medium transition"
             >
                 Go Back
             </button>
         </div>
     </div>
 );
-/* ------------------------- Main Profile Dashboard ------------------------- */
+
+/* ------------------------- Main Profile Dashboard (refreshed layout) ------------------------- */
 export default function ProfileDashboard() {
     const { username } = useParams();
     const navigate = useNavigate();
     const me = useMe();
 
     const { windowWidth } = useContextManager();
+    const isXS = windowWidth < 380;
+    const isSM = windowWidth < 778;
+    const isMD = windowWidth < 1024;
+    const isLG = windowWidth >= 1024;
 
+    const avatarSize = isXS ? 110 : isSM ? 130 : isMD ? 150 : 160;
+    const headerPadding = isXS ? "p-4" : isSM ? "p-5" : "p-6";
+    const titleClass = isXS
+        ? "text-xl"
+        : isSM
+            ? "text-2xl"
+            : "text-3xl";
+    const sectionGap = isXS ? "space-y-6" : "space-y-10";
+    const statsWrap = isXS || isSM;
 
     useEffect(() => {
         if (!username && me.data?.username) {
             navigate(`/profile/${encodeURIComponent(me.data.username)}`, { replace: true });
         }
     }, [username, me.data, navigate]);
-
 
     const profileQuery = useQuery({
         queryKey: ["profile", username],
@@ -1009,8 +670,9 @@ export default function ProfileDashboard() {
         staleTime: 1000 * 60 * 2,
     });
 
-
     const canEdit = Boolean(me.data?.username && username && me.data.username === username);
+    const isAdmin = Boolean(me.data?.is_admin);
+
 
     const reputationQuery = useQuery({
         queryKey: ["profile", username, "reputation"],
@@ -1029,13 +691,11 @@ export default function ProfileDashboard() {
 
     useEffect(() => {
         const isModalOpen = editOpen || avatarOpen;
-
         if (isModalOpen) {
             document.body.style.overflow = "hidden";
         } else {
             document.body.style.overflow = "";
         }
-
         return () => {
             document.body.style.overflow = "";
         };
@@ -1044,18 +704,10 @@ export default function ProfileDashboard() {
     const isOwnProfile = !username;
     const isLoading = isOwnProfile ? me.isLoading : profileQuery.isLoading;
 
-    const profileData = isOwnProfile ? me.data : profileQuery.data;
-    const isMissing =
-        isOwnProfile ? !me.data : profileQuery.isError || !profileQuery.data;
-
-    // -----------------------------
-    // RENDER STATES
-    // -----------------------------
+    const isMissing = isOwnProfile ? !me.data : profileQuery.isError || !profileQuery.data;
 
     if (isLoading) return <ProfileLoading />;
-
     if (isMissing) return <ProfileNotFound />;
-
 
     const raw = profileQuery.data || {};
 
@@ -1070,7 +722,6 @@ export default function ProfileDashboard() {
             progress_pct: raw.reputation.progress_pct ?? 0,
         };
     } else {
-
         reputationObj = { score: Number(raw.reputation) || 0, level: "--", progress_pct: 0 };
     }
 
@@ -1092,18 +743,27 @@ export default function ProfileDashboard() {
     const youtube = user?.youtube?.replace(/^https?:\/\//, "");
 
     return (
-        <div className="min-h-screen px-4 sm:px-6 lg:px-8 py-8 sm:py-12 text-neutral-200 bg-gradient-to-b">
-            <div className="max-w-6xl mx-auto space-y-10">
+        <div
+            className={`
+                min-h-screen max-w-[100vw] text-neutral-200 px-3 py-6
+            `}
+        >
 
-                {/* Identity header */}
+            <div className={`max-w-6xl mx-auto ${sectionGap}`}>
+
+                {/* Header */}
                 <div
-                    className={`flex flex-col gap-6`}
+                    className={`
+                        rounded-3xl ${headerPadding}
+                        flex ${windowWidth < 774 ? "flex-col items-start" : "flex-row items-center"}
+                        gap-${isXS ? "4" : "6"}
+                    `}
                 >
-                    {/* Left: identity */}
-                    <div className={`flex items-center justify-start w-full ${windowWidth < 640 ? "flex-col" : "flex-row"} gap-6 shrink-0`}>
-                        <div className="flex flex-col gap-6">
-                            <div className={`relative shrink-0 ${windowWidth < 640 ? "mx-auto" : ""}`}>
-                                <div className="grid place-items-center">
+
+                    <div className={`flex items-center gap-6 w-full ${isXS ? "flex-col" : "flex-row"}`}>
+                        <div className="relative">
+                            <div className="rounded-full bg-gradient-to-tr from-amber-400 to-pink-400 p-1">
+                                <div className="rounded-full bg-neutral-700">
                                     <img
                                         src={
                                             user.avatar_url
@@ -1111,42 +771,48 @@ export default function ProfileDashboard() {
                                                 : `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username ?? "User")}`
                                         }
                                         alt={user.username}
-                                        className="row-start-1 col-start-1 shrink-0 w-[160px] h-[160px] rounded-3xl object-cover ring-2 ring-white/10 shadow-xl"
+                                        style={{ width: avatarSize, height: avatarSize }}
+                                        className="rounded-full object-cover ring-4 ring-black/60 shadow-xl"
                                     />
-
-                                    {canEdit && (
-                                        <button
-                                            onClick={() => setAvatarOpen(true)}
-                                            className="row-start-1 col-start-1 w-[160px] h-[160px] bg-black/60 opacity-0 hover:opacity-100 transition flex items-center justify-center rounded-3xl text-sm font-medium"
-                                        >
-                                            Change
-                                        </button>
-                                    )}
                                 </div>
                             </div>
 
-
+                            {canEdit && (
+                                <button
+                                    onClick={() => setAvatarOpen(true)}
+                                    className="absolute -right-2 -bottom-2 bg-amber-400 p-2 rounded-full shadow-md text-neutral-900 hover:scale-105 transition"
+                                >
+                                    <Upload className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
-                        <div className="flex flex-col gap-3">
-                            <div>
-                                <h1 className={`text-xl sm:text-2xl font-semibold tracking-tight flex items-baseline gap-2 ${windowWidth < 640 ? "justify-center" : ""}`}>
-                                    {user.username}
-                                    <span className="inline-block w-2 h-2 rounded-full bg-orange-400" />
-                                </h1>
-                                {user.bio && (
-                                    <p className={`text-sm text-zinc-400 mt-1 leading-relaxed ${windowWidth < 640 ? "text-center" : ""}`}>
-                                        {user.bio}
-                                    </p>
-                                )}
-                            </div>
 
-                            <div className={`flex gap-2 ${windowWidth < 640 ? "w-full justify-center" : ""}`}>
+
+                        <div className="flex flex-col">
+                            <div className="flex items-baseline gap-3">
+                                <h1 className={`${titleClass} font-semibold tracking-tight`}>
+                                    {user.username}</h1>
+                                <span className="inline-block w-2 h-2 rounded-full bg-orange-400" />
+                            </div>
+                            {user.bio && (
+                                <p
+                                    className={`
+                                        mt-2 text-sm text-zinc-400 max-w-xl
+                                        ${isXS ? "leading-snug" : "leading-relaxed"}
+                                    `}
+                                >
+                                    {user.bio}
+                                </p>
+                            )}
+
+
+                            <div className="mt-4 flex items-center gap-3">
                                 {canEdit ? (
                                     <button
                                         onClick={() => setEditOpen(true)}
-                                        className={`px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 transition text-sm ${windowWidth < 640 ? "w-full text-center" : ""}`}
+                                        className="px-4 py-2 rounded-lg bg-orange-600/90 hover:bg-orange-500 text-black font-bold transition flex items-center gap-2 text-sm"
                                     >
-                                        Edit Profile
+                                        <Edit2 className="w-4 h-4" /> Edit Profile
                                     </button>
                                 ) : (
                                     <div className="text-sm text-zinc-400">
@@ -1155,141 +821,151 @@ export default function ProfileDashboard() {
                                 )}
                             </div>
                         </div>
-
                     </div>
 
-                    {/* Right: stats */}
+                    {/* Stats (compact) */}
                     <div
-                        className={`${windowWidth < 640
-                            ? "w-full grid grid-cols-1"
-                            : "flex-1 grid grid-cols-3"
-                            } gap-3`}
+                        className={`
+                            ${statsWrap ? "w-full grid grid-cols-3 gap-2 mt-4" : "ml-auto flex gap-3"}
+                        `}
                     >
+
                         {[
                             ["Recipes", user.stats?.recipes ?? 0],
                             ["Forks", user.stats?.forks ?? 0],
                             ["Comments", user.stats?.comments ?? 0],
                         ].map(([label, value]) => (
-                            <div
-                                key={label}
-                                className="bg-white/5  p-4 rounded-xl text-center border border-white/5 shadow-inner"
-                            >
-                                <div className="text-xl sm:text-2xl font-black">{value}</div>
-                                <InlineLabel>{label}</InlineLabel>
+                            <div key={label} className="bg-white/4 px-4 py-3 rounded-2xl text-center min-w-[96px]">
+                                <div className="text-xl text-center w-full font-bold">{value}</div>
+                                <span className="text-xs text-zinc-400">{label}</span>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                {/* Main grid */}
+                {/* Main content */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                    {/* Left column */}
+                    {/* Left / main */}
                     <div className="lg:col-span-2 space-y-6">
+                        <div className="p-6 rounded-2xl border border-neutral-700 bg-gradient-to-br from-black/20 to-black/10">
+                            <h2 className="font-semibold text-base mb-2">About</h2>
+                            <p className="text-zinc-400 leading-relaxed">{user.bio ?? "No bio provided."}</p>
+                            <div className="sm:col-span-2 text-sm mt-4">On Forkit since <span className="text-zinc-300">
+                                {user.created_at ? new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "2-digit" }).format(new Date(user.created_at)) : "--"}
+                            </span></div>
 
-                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
-                            <h2 className="font-semibold text-base sm:text-lg mb-3">About</h2>
-                            <p className="text-sm text-zinc-400 leading-relaxed">
-                                {user.bio ?? "No bio provided."}
-                            </p>
+                            {user.location || user.website || twitter || youtube ?
+                                (
+                                <>
+                                    <label className="block mt-4 mb-2 font-semibold text-base">Additional info</label>
+                                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-zinc-400">
+                                        {user.location && <div>Location: {" "}<span className="text-zinc-200">{user.location}</span></div>}
+                                        {user.website && <div>Website: {" "}
+                                            <a href={user.website} target="_blank" rel="noopener noreferrer" className="text-zinc-200 underline break-all hover:text-white transition">
+                                                {user.website}
+                                            </a>
+                                        </div>
+                                        }
+                                        {twitter && <div>Twitter: {" "}
+                                            <a href={`https://twitter.com/${encodeURIComponent(twitter)}`} target="_blank" rel="noopener noreferrer" className="text-zinc-200 underline hover:text-white transition">
+                                                @{twitter}
+                                            </a>
+                                        </div>
+                                        }
 
-                            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm text-zinc-400">
-                                <div>Location: <span className="text-zinc-300">{user.location || "--"}</span></div>
-                                <div>
-                                    Website:{" "}
-                                    {user.website ? (
-                                        <a
-                                            href={user.website}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-zinc-300 underline break-all hover:text-white transition"
-                                        >
-                                            {user.website}
-                                        </a>
-                                    ) : (
-                                        <span className="text-zinc-300">--</span>
-                                    )}
-                                </div>
-                                <div>
-                                    Twitter: {twitter ? (
-                                        <a
-                                            href={`https://twitter.com/${encodeURIComponent(twitter)}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-zinc-300 underline ml-1 hover:text-white transition"
-                                        >
-                                            @{twitter}
-                                        </a>
-                                    ) : <span className="text-zinc-300 ml-1">--</span>}
-                                </div>
-                                <div>
-                                    YouTube: {youtube ? (
-                                        <a
-                                            href={`https://youtube.com/@${encodeURIComponent(youtube)}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-zinc-300 underline ml-1 hover:text-white transition"
-                                        >
-                                            @{youtube}
-                                        </a>
-                                    ) : <span className="text-zinc-300 ml-1">--</span>}
-                                </div>
-                                <div className="sm:col-span-2">
-                                    Joined:{" "}
-                                    <span className="text-zinc-300">
-                                        {user.created_at
-                                            ? new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "2-digit" }).format(new Date(user.created_at))
-                                            : "--"}
-                                    </span>
-                                </div>
-                            </div>
+                                        {youtube && <div>YouTube: {" "}
+                                            <a href={`https://youtube.com/@${encodeURIComponent(youtube)}`} target="_blank" rel="noopener noreferrer" className="text-zinc-200 underline hover:text-white transition">
+                                                @{youtube}
+                                            </a>
+                                        </div>
+                                        }
+                                    </div>
+                                </>
+                                ) : (
+                                    <div className="text-sm text-zinc-500 mt-4">No additional information provided.</div>
+                                )
+                            }
                         </div>
 
-                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
+                        <div className="p-6 rounded-2xl border border-neutral-700 bg-gradient-to-br from-black/20 to-black/10">
                             <h3 className="font-semibold mb-3">Activity</h3>
                             <ActivityFeed username={user.username ?? username ?? ""} />
                         </div>
                     </div>
 
-                    {/* Right column */}
+                    {/* Right sidebar */}
                     <div className="space-y-6">
-                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
+                        <div className="p-4 rounded-2xl border border-neutral-700 bg-gradient-to-br from-black/20 to-black/10">
                             <ReputationBar rep={user.reputation_obj} />
                         </div>
 
-                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
+                        <div className="p-4 rounded-2xl border border-neutral-700 bg-gradient-to-br from-black/20 to-black/10">
                             <h3 className="font-semibold mb-3">Badges</h3>
                             <BadgesList badges={user.badges ?? []} />
                         </div>
                     </div>
                 </div>
 
-                {/* Authorized only */}
+                {/* Owner-only sections */}
                 {canEdit && (
                     <div className="space-y-6">
-                        <div className="bg-gradient-to-br from-neutral-900/90 via-neutral-900/60 to-black/80  p-5 sm:p-6 rounded-2xl border border-white/5 shadow-lg">
-                            <SecurityCenterExpanded me={user} />
+                        <div className="p-6 rounded-2xl border border-neutral-700 bg-gradient-to-br from-black/20 to-black/10">
+                            <div className="flex items-center gap-3 mb-3">
+                                <ShieldCheck className="w-5 h-5 text-amber-400" />
+                                <div>
+                                    <div className="font-semibold text-base">Security</div>
+                                </div>
+                            </div>
+                            <LazyErrorBoundary
+                                fallback={
+                                    <SoftCrashPanel />
+                                }
+                            >
+                                <Suspense fallback={<PanelSkeleton />}>
+                                    <SecurityCenterExpanded me={user} />
+                                </Suspense>
+                            </LazyErrorBoundary>
                         </div>
 
-                        <div className="bg-gradient-to-br from-red-900/30 via-red-900/20 to-black/80  p-5 sm:p-6 rounded-2xl border border-red-400/40 shadow-lg">
-                            <h3 className="font-semibold">Danger Zone</h3>
-                            <p className="mt-2 text-sm text-zinc-400">
-                                Actions here are destructive. You'll be asked to confirm.
-                            </p>
-                            <div className="mt-4">
-                                <button className="bg-red-700/90 hover:bg-red-600 px-4 py-2 rounded-xl text-sm transition">
-                                    Delete account
-                                </button>
+                        <div className="p-6 rounded-2xl border border-red-500/30 bg-gradient-to-br from-red-900/20 to-black/30">
+                            <div className="flex md:flex-row flex-col md:items-center md:justify-between">
+                                <div>
+                                    <h3 className="font-semibold">Danger Zone</h3>
+                                    <p className="mt-2 text-sm text-zinc-400">
+                                        Actions here are destructive. You'll be asked to confirm.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2 mt-5 md:mt-0">
+                                    <button className="flex items-center gap-2 bg-red-700/90 hover:bg-red-600 px-4 py-2 rounded-xl text-sm transition">
+                                        <Trash2 className="w-4 h-4" /> Delete account
+                                    </button>
+                                </div>
                             </div>
                         </div>
+                        {isAdmin && <div className="p-6">
+                            <div className="flex md:flex-row flex-col md:items-center md:justify-between">
+                                <div>
+                                    <h3 className="font-semibold">Go to Admin Panel</h3>
+                                    <p className="mt-2 text-sm text-zinc-400">
+                                        Access administrative tools and settings for your account.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2 mt-5 md:mt-0">
+                                    <button className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-900 px-4 py-2 rounded-xl text-sm transition"
+                                        onClick={() => window.location.href = "/admin"}
+                                    >
+                                        <Settings className="w-4 h-4" /> Admin
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        }
                     </div>
                 )}
 
-                {/* Modals */}
                 {canEdit && <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} user={user} />}
                 {canEdit && <AvatarEditorModal open={avatarOpen} onClose={() => setAvatarOpen(false)} username={user.username ?? username} />}
             </div>
         </div>
     );
-
 }

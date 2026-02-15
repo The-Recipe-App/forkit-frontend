@@ -51,7 +51,7 @@ function Login() {
         await supabase.auth.signInWithOAuth({
             provider: "google",
             options: {
-                redirectTo: "http://localhost:5173/login?oauth=1",
+                redirectTo: import.meta.env.VITE_SUPABASE_REDIRECT_URI,
                 queryParams: { prompt: "select_account" }
             },
         });

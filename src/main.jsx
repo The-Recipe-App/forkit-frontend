@@ -24,7 +24,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         domain="forkit-oauth.eu.auth0.com"
         clientId="yRaevUwMPOY5938zax9xokPAgDCTvQac"
         authorizationParams={{
-          redirect_uri: "http://localhost:5173/oauth/callback"
+          redirect_uri: VITE_SUPABASE_REDIRECT_URI
         }}
       >
         <App />

@@ -3,49 +3,46 @@
 # ================================
 FROM node:20-alpine AS builder
 
-# Prevent interactive npm behavior
 ENV CI=true
-
 WORKDIR /app
 
-# Copy dependency manifests first (better caching)
+# Accept build-time variables from Railway
+ARG VITE_SERVER_URL
+ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_SUPABASE_REDIRECT_URI
+
+# Make them available to Vite build
+ENV VITE_SERVER_URL=$VITE_SERVER_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_REDIRECT_URI=$VITE_SUPABASE_REDIRECT_URI
+
+# Copy dependency manifests
 COPY package.json package-lock.json* ./
 
 # Install dependencies
-# - uses npm ci if lockfile exists
-# - falls back to npm install if not
 RUN if [ -f package-lock.json ]; then \
       npm ci --no-audit --no-fund; \
     else \
       npm install --no-audit --no-fund; \
     fi
 
-# Copy rest of source
+# Copy source
 COPY . .
 
-# Build production assets
+# Build app (Vite reads env here)
 RUN npm run build
 
 
 # ================================
-# Stage 2 — Production server
+# Stage 2 — nginx production
 # ================================
 FROM nginx:alpine
 
-# Remove default nginx config
 RUN rm -f /etc/nginx/conf.d/default.conf
-
-# Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy built app from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Ensure proper permissions
 RUN chmod -R 755 /usr/share/nginx/html
 
-# Expose Railway port
 EXPOSE 8080
-
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]

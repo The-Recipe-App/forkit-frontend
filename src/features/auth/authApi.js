@@ -1,7 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import backendUrlV1 from "../../urls/backendUrl";
 import { useContextManager } from "../ContextProvider";
-import { supabase } from "../../lib/supabase";
 
 /* -------------------------
    Helpers

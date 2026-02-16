@@ -87,6 +87,8 @@ function Login() {
     const oauthAbortRef = useRef(null);
     const inProgressRef = useRef(Boolean(getOAuthKey(OAUTH_KEYS.IN_PROGRESS)));
 
+    const [needsReg, setNeedsReg] = useState(false);
+
     function safeDispatch(action) {
         if (isMountedRef.current) dispatch(action);
     }
@@ -118,6 +120,11 @@ function Login() {
         }
     }, [me, navigate]);
 
+    useEffect(() => {
+        if (sessionStorage.getItem(OAUTH_KEYS.REQUIRES_REGISTRATION) === "1") {
+            setNeedsReg(true);
+        }
+    }, []);
     // cross-tab storage listener
     useEffect(() => {
         function onStorage(e) {
@@ -576,7 +583,7 @@ function Login() {
                 </div>
             </div>
             <Modal
-                isOpen={sessionStorage.getItem(OAUTH_KEYS.REQUIRES_REGISTRATION) === "1"}
+                isOpen={needsReg}
                 lock
                 type="warning"
                 title="No account found"

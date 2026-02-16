@@ -7,7 +7,7 @@ import Cropper from "react-easy-crop";
 import { Upload, Edit2, ShieldCheck, Trash2, Settings } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
 import { lazy, Suspense } from "react";
-import LazyErrorBoundary from "../components/lazyLoadError";
+import LazyErrorBoundary from "../components/LazyLoadError";
 import PanelSkeleton from "../components/PanelSkeleton";
 import SoftCrashPanel from "../components/SoftCrashPanel";
 

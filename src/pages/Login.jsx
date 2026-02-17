@@ -403,7 +403,7 @@ function Login() {
         }
     }, [anyLoading, state.identifier]);
 
-    const hasChallenge = Boolean(state.challengeId && localStorage.getItem(OAUTH_KEYS.REQUIRES_OTP) === "1");
+    const hasOTPChallenge = Boolean(localStorage.getItem(OAUTH_KEYS.CHALLENGE) && localStorage.getItem(OAUTH_KEYS.REQUIRES_OTP) === "1");
 
     return (
         <div className="min-h-screen flex items-center justify-center">
@@ -422,7 +422,7 @@ function Login() {
                 )}
 
                 <div className="space-y-4 mt-6">
-                    {!hasChallenge ? (
+                    {!hasOTPChallenge ? (
                         <div className="flex flex-col justify-evenly">
                             <div className="space-y-4 w-full">
                                 <input

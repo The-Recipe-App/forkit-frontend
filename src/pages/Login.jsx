@@ -403,7 +403,25 @@ function Login() {
         }
     }, [anyLoading, state.identifier]);
 
-    const hasOTPChallenge = Boolean(localStorage.getItem(OAUTH_KEYS.CHALLENGE) && localStorage.getItem(OAUTH_KEYS.REQUIRES_OTP) === "1");
+    const [hasOTPChallenge, setHasOTPChallenge] = useState(false);
+
+    useEffect(() => {
+        const challenge = getOAuthKey(OAUTH_KEYS.CHALLENGE);
+        const requiresOtp = getOAuthKey(OAUTH_KEYS.REQUIRES_OTP) === "1";
+        setHasOTPChallenge(Boolean(challenge && requiresOtp));
+    }, []);
+
+    useEffect(() => {
+        function onStorage(e) {
+            if (e.key === OAUTH_KEYS.CHALLENGE || e.key === OAUTH_KEYS.REQUIRES_OTP) {
+                const challenge = getOAuthKey(OAUTH_KEYS.CHALLENGE);
+                const requiresOtp = getOAuthKey(OAUTH_KEYS.REQUIRES_OTP) === "1";
+                setHasOTPChallenge(Boolean(challenge && requiresOtp));
+            }
+        }
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+    }, []);
 
     return (
         <div className="min-h-screen flex items-center justify-center">

@@ -403,7 +403,7 @@ function Login() {
         }
     }, [anyLoading, state.identifier]);
 
-    const hasChallenge = Boolean(state.challengeId && localStorage.getItem(OAUTH_KEYS.CHALLENGE));
+    const hasChallenge = Boolean(state.challengeId && localStorage.getItem(OAUTH_KEYS.REQUIRES_OTP) === "1");
 
     return (
         <div className="min-h-screen flex items-center justify-center">

@@ -35,14 +35,14 @@ const OAUTH_KEYS = {
 };
 
 function setOAuthKey(key, value) {
-    if (value === undefined || value === null) sessionStorage.removeItem(key);
-    else sessionStorage.setItem(key, value);
+    if (value === undefined || value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
 }
 function getOAuthKey(key) {
-    return sessionStorage.getItem(key);
+    return localStorage.getItem(key);
 }
 function clearOAuthKeys() {
-    Object.values(OAUTH_KEYS).forEach((k) => sessionStorage.removeItem(k));
+    Object.values(OAUTH_KEYS).forEach((k) => localStorage.removeItem(k));
 }
 
 const initialState = {
@@ -94,7 +94,7 @@ function Login() {
     }
 
     useEffect(() => {
-        // Rehydrate OAuth state from sessionStorage so OTP UI survives redirects
+        // Rehydrate OAuth state from localStorage so OTP UI survives redirects
         const storedChallenge = getOAuthKey(OAUTH_KEYS.CHALLENGE);
         const storedMasked = getOAuthKey(OAUTH_KEYS.MASKED_EMAIL);
         if (storedChallenge) safeDispatch({ type: "SET", key: "challengeId", value: storedChallenge });
@@ -121,7 +121,7 @@ function Login() {
     }, [me, navigate]);
 
     useEffect(() => {
-        if (sessionStorage.getItem(OAUTH_KEYS.REQUIRES_REGISTRATION) === "1") {
+        if (localStorage.getItem(OAUTH_KEYS.REQUIRES_REGISTRATION) === "1") {
             setNeedsReg(true);
         }
     }, []);
@@ -160,7 +160,7 @@ function Login() {
             // This is a brand new login session
             resetLoginState({ clearOAuth: true });
         } else {
-            console.log("Active OAuth flow detected on mount, rehydrating state from sessionStorage.");
+            console.log("Active OAuth flow detected on mount, rehydrating state from localStorage.");
         }
     }, []);
 
@@ -171,10 +171,10 @@ function Login() {
         inProgressRef.current = true;
 
         // clear transient oauth values before starting new flow
-        sessionStorage.removeItem(OAUTH_KEYS.EMAIL);
-        sessionStorage.removeItem(OAUTH_KEYS.CHALLENGE);
-        sessionStorage.removeItem(OAUTH_KEYS.TOKEN);
-        sessionStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
+        localStorage.removeItem(OAUTH_KEYS.EMAIL);
+        localStorage.removeItem(OAUTH_KEYS.CHALLENGE);
+        localStorage.removeItem(OAUTH_KEYS.TOKEN);
+        localStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
 
         const redirectTo = `${window.location.origin}/login?oauth=1`;
 
@@ -189,7 +189,7 @@ function Login() {
             // Supabase will redirect — no further work here
         } catch (err) {
             inProgressRef.current = false;
-            sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
+            localStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
             safeDispatch({ type: "SET", key: "error", value: err?.message || "OAuth initiation failed" });
         }
     }, []);
@@ -198,7 +198,7 @@ function Login() {
     const handleOAuth = useCallback(
         async ({ registered = false } = {}) => {
             try {
-                sessionStorage.setItem(OAUTH_KEYS.IN_PROGRESS, "1");
+                localStorage.setItem(OAUTH_KEYS.IN_PROGRESS, "1");
                 inProgressRef.current = true;
 
                 let access_token;
@@ -216,11 +216,11 @@ function Login() {
 
                     if (!access_token) return;
 
-                    sessionStorage.setItem(OAUTH_KEYS.TOKEN, access_token);
-                    sessionStorage.setItem(OAUTH_KEYS.EMAIL, String(email));
+                    localStorage.setItem(OAUTH_KEYS.TOKEN, access_token);
+                    localStorage.setItem(OAUTH_KEYS.EMAIL, String(email));
                 } else {
-                    access_token = sessionStorage.getItem(OAUTH_KEYS.TOKEN);
-                    email = sessionStorage.getItem(OAUTH_KEYS.EMAIL);
+                    access_token = localStorage.getItem(OAUTH_KEYS.TOKEN);
+                    email = localStorage.getItem(OAUTH_KEYS.EMAIL);
                 }
 
                 const fingerprint = window.localStorage.getItem("device_fp") || null;
@@ -249,25 +249,25 @@ function Login() {
 
                 // fully logged in
                 if (body.ok && !body.needs_registration) {
-                    sessionStorage.removeItem(OAUTH_KEYS.EMAIL);
-                    sessionStorage.removeItem(OAUTH_KEYS.CHALLENGE);
-                    sessionStorage.removeItem(OAUTH_KEYS.TOKEN);
-                    sessionStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
+                    localStorage.removeItem(OAUTH_KEYS.EMAIL);
+                    localStorage.removeItem(OAUTH_KEYS.CHALLENGE);
+                    localStorage.removeItem(OAUTH_KEYS.TOKEN);
+                    localStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
                     window.history.replaceState({}, "", "/login");
                     window.location.replace("/");
                     return;
                 }
 
                 if (body.challenge === "otp_required") {
-                    sessionStorage.setItem(OAUTH_KEYS.CHALLENGE, body.challenge_id);
-                    sessionStorage.setItem(OAUTH_KEYS.MASKED_EMAIL, body.masked_email);
-                    sessionStorage.setItem(OAUTH_KEYS.REQUIRES_OTP, "1");
+                    localStorage.setItem(OAUTH_KEYS.CHALLENGE, body.challenge_id);
+                    localStorage.setItem(OAUTH_KEYS.MASKED_EMAIL, body.masked_email);
+                    localStorage.setItem(OAUTH_KEYS.REQUIRES_OTP, "1");
                 }
 
                 if (body.needs_registration) {
-                    sessionStorage.setItem(OAUTH_KEYS.EMAIL, body.email);
-                    sessionStorage.setItem(OAUTH_KEYS.CHALLENGE, body.challenge_id);
-                    sessionStorage.setItem(OAUTH_KEYS.REQUIRES_REGISTRATION, "1");
+                    localStorage.setItem(OAUTH_KEYS.EMAIL, body.email);
+                    localStorage.setItem(OAUTH_KEYS.CHALLENGE, body.challenge_id);
+                    localStorage.setItem(OAUTH_KEYS.REQUIRES_REGISTRATION, "1");
                 }
             } catch (err) {
                 if (err?.name === "AbortError") {
@@ -276,7 +276,7 @@ function Login() {
                     safeDispatch({ type: "SET", key: "error", value: err?.message || "OAuth flow failed" });
                 }
             } finally {
-                sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
+                localStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
                 inProgressRef.current = false;
                 oauthAbortRef.current = null;
             }
@@ -285,9 +285,9 @@ function Login() {
     );
 
     function registerHandler() {
-        safeDispatch({ type: "SET_MANY", payload: { challengeId: sessionStorage.getItem(OAUTH_KEYS.CHALLENGE), maskedEmail: sessionStorage.getItem(OAUTH_KEYS.MASKED_EMAIL) || "" } });
+        safeDispatch({ type: "SET_MANY", payload: { challengeId: localStorage.getItem(OAUTH_KEYS.CHALLENGE), maskedEmail: localStorage.getItem(OAUTH_KEYS.MASKED_EMAIL) || "" } });
         window.history.replaceState({}, "", "/login");
-        sessionStorage.removeItem(OAUTH_KEYS.REQUIRES_REGISTRATION);
+        localStorage.removeItem(OAUTH_KEYS.REQUIRES_REGISTRATION);
         navigate("/register?oauth=1");
     }
 
@@ -303,11 +303,11 @@ function Login() {
         dispatch({ type: "RESET" });
 
         if (clearOAuth) {
-            sessionStorage.removeItem(OAUTH_KEYS.EMAIL);
-            sessionStorage.removeItem(OAUTH_KEYS.CHALLENGE);
-            sessionStorage.removeItem(OAUTH_KEYS.TOKEN);
-            sessionStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
-            sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
+            localStorage.removeItem(OAUTH_KEYS.EMAIL);
+            localStorage.removeItem(OAUTH_KEYS.CHALLENGE);
+            localStorage.removeItem(OAUTH_KEYS.TOKEN);
+            localStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
+            localStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
         }
     }
 
@@ -323,14 +323,14 @@ function Login() {
         window.history.replaceState({}, "", "/login");
 
         // set in-progress then run exchange
-        sessionStorage.setItem(OAUTH_KEYS.IN_PROGRESS, "1");
+        localStorage.setItem(OAUTH_KEYS.IN_PROGRESS, "1");
         inProgressRef.current = true;
 
         (async () => {
             try {
                 await handleOAuth({ registered: Boolean(registered) });
             } finally {
-                sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
+                localStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
                 inProgressRef.current = false;
             }
         })();
@@ -349,8 +349,8 @@ function Login() {
 
                 if (res?.challenge === "otp_required") {
                     safeDispatch({ type: "SET_MANY", payload: { challengeId: res.challenge_id, maskedEmail: res.masked_email || "" } });
-                    if (res.challenge_id) sessionStorage.setItem(OAUTH_KEYS.CHALLENGE, res.challenge_id);
-                    if (res.masked_email) sessionStorage.setItem(OAUTH_KEYS.MASKED_EMAIL, res.masked_email);
+                    if (res.challenge_id) localStorage.setItem(OAUTH_KEYS.CHALLENGE, res.challenge_id);
+                    if (res.masked_email) localStorage.setItem(OAUTH_KEYS.MASKED_EMAIL, res.masked_email);
                 }
             } catch (err) {
                 safeDispatch({ type: "SET", key: "error", value: err?.message || "Invalid credentials." });
@@ -370,8 +370,8 @@ function Login() {
 
             try {
                 await verifyLoginOtp({
-                    identifier: state.identifier || sessionStorage.getItem(OAUTH_KEYS.EMAIL),
-                    challenge_id: state.challengeId || sessionStorage.getItem(OAUTH_KEYS.CHALLENGE),
+                    identifier: state.identifier || localStorage.getItem(OAUTH_KEYS.EMAIL),
+                    challenge_id: state.challengeId || localStorage.getItem(OAUTH_KEYS.CHALLENGE),
                     code: state.otp,
                 });
                 clearOAuthKeys();
@@ -403,7 +403,7 @@ function Login() {
         }
     }, [anyLoading, state.identifier]);
 
-    const hasChallenge = Boolean(state.challengeId && sessionStorage.getItem(OAUTH_KEYS.CHALLENGE));
+    const hasChallenge = Boolean(state.challengeId && localStorage.getItem(OAUTH_KEYS.CHALLENGE));
 
     return (
         <div className="min-h-screen flex items-center justify-center">
@@ -529,7 +529,7 @@ function Login() {
                         <form onSubmit={handleVerifyOtp} className="w-full flex pt-4 border-t justify-center border-gray-700 space-y-3">
                             <div className="w-fit space-y-3">
                                 <p className="text-sm text-gray-400 text-center">
-                                    Enter the code sent to {state.maskedEmail || sessionStorage.getItem(OAUTH_KEYS.MASKED_EMAIL)}
+                                    Enter the code sent to {state.maskedEmail || localStorage.getItem(OAUTH_KEYS.MASKED_EMAIL)}
                                 </p>
 
                                 <input
@@ -587,7 +587,7 @@ function Login() {
                 lock
                 type="warning"
                 title="No account found"
-                description={`We couldn't find an account for ${sessionStorage.getItem(OAUTH_KEYS.EMAIL) || "this email"}. What would you like to do?`}
+                description={`We couldn't find an account for ${localStorage.getItem(OAUTH_KEYS.EMAIL) || "this email"}. What would you like to do?`}
                 primaryAction={{
                     label: "Register a new account",
                     onClick: registerHandler,
@@ -599,7 +599,7 @@ function Login() {
             >
                 <div className="p-3 text-sm text-zinc-300">
                     <p className="mb-2">
-                        Registering will create a new site account for <strong>{sessionStorage.getItem(OAUTH_KEYS.EMAIL) || "this email"}</strong> with OAuth login.
+                        Registering will create a new site account for <strong>{localStorage.getItem(OAUTH_KEYS.EMAIL) || "this email"}</strong> with OAuth login.
                     </p>
                     <p className="mb-2">
                         If you wish, you can also register a password login from your account settings after registering, but it&apos;s not mandatory.

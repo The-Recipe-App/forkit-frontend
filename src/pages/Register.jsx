@@ -449,7 +449,7 @@ export default function Register() {
         dispatch({ type: "SET", key: "stage", value: "oauthfinal" });
 
         // Call backend flow-aware registration endpoint. Backend will use server side flow keyed by flowId.
-        res = await fetch(`${backendUrlV1}/auth/oauth/registration/register`, {
+        res = await fetch(`${backendUrlV1}/auth/oauth/registration/register_with_flow`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -519,6 +519,40 @@ export default function Register() {
 
   const usernameStatus = useUsernameAvailabilitySimple(state.userName, Boolean(state.userName));
   const isUsernameValid = !state.userName || usernameStatus === "available";
+
+  const handledFlowRef = useRef(false);
+
+  useEffect(() => {
+    if (!flowId || handledFlowRef.current) return;
+    handledFlowRef.current = true;
+
+    (async () => {
+      try {
+        const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(flowId)}`, {
+          credentials: "include",
+        });
+
+        if (!res.ok) {
+          navigate("/register");
+          return;
+        }
+
+        const body = await res.json().catch(() => null);
+        if (!body) {
+          navigate("/register");
+          return;
+        }
+
+        if (body.email) dispatch({ type: "SET", key: "email", value: body.email });
+        if (body.challenge_id) dispatch({ type: "SET", key: "challengeId", value: body.challenge_id });
+
+        dispatch({ type: "SET", key: "stage", value: "consent" });
+        await handlePolicyStep();
+      } catch {
+        navigate("/register");
+      }
+    })();
+  }, []);
 
   // If flow_id present, populate email/challenge from backend flow store and go to consent
   useEffect(() => {
@@ -733,11 +767,11 @@ export default function Register() {
 
           {state.policiesMeta.map(p => (
             <div key={p.key || p.id || p.slug} className="border border-white/10 rounded-lg p-3">
-            <div className="flex justify-between items-start gap-3">
-              <div>
-                <div className="font-semibold">{p.title || p.name || p.display_name || p.key}</div>
+              <div className="flex justify-between items-start gap-3">
+                <div>
+                  <div className="font-semibold">{p.title || p.name || p.display_name || p.key}</div>
                   {p.effective_at && <div className="text-xs text-neutral-400">Effective: {new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(p.effective_at))}</div>}
-                  </div>
+                </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => loadPolicyFull(p.key || p.id || p.slug)}

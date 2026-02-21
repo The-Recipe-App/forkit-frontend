@@ -15,7 +15,6 @@ import RecipeDetail from "./pages/RecipeDetail";
 import ForkEditor from "./pages/ForkEditor";
 import ProfileDashboard from "./pages/ProfileDashboard";
 import ActivateAccount from "./pages/ActivateAccount";
-import OAuthCallback from "./pages/OAuthCallback";
 
 function App() {
   const publicRoutes = [
@@ -30,7 +29,6 @@ function App() {
     { path: "/profile", element: <ProfileDashboard /> },
     { path: "/profile/:username", element: <ProfileDashboard /> },
     { path: "/activate-account*", element: <ActivateAccount /> },
-    { path: "/oauth/callback", element: <OAuthCallback /> },
   ];
 
 

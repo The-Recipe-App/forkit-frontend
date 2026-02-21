@@ -30,7 +30,7 @@ const initialState = {
     otp: "",
     challengeId: null,
     maskedEmail: "",
-    oauthEmail: "", // used for modal description when backend claims needs_registration
+    oauthEmail: "",
     showPassword: false,
     error: "",
     loading: {
@@ -71,6 +71,8 @@ function Login() {
     const isMountedRef = useRef(true);
     const oauthAbortRef = useRef(null);
     const pollRef = useRef(null);
+    const handledFlowRef = useRef(null);
+
     const [flowId, setFlowId] = useState(null);
     const [needsReg, setNeedsReg] = useState(false);
 
@@ -82,9 +84,7 @@ function Login() {
         return () => {
             isMountedRef.current = false;
             if (oauthAbortRef.current) {
-                try {
-                    oauthAbortRef.current.abort();
-                } catch {}
+                try { oauthAbortRef.current.abort(); } catch {}
             }
             if (pollRef.current) {
                 clearInterval(pollRef.current);
@@ -101,9 +101,9 @@ function Login() {
         }
     }, [me, navigate]);
 
-    // Start OAuth flow: ask backend for a flow_id, redirect provider with flow_id
     const handleGoogleLogin = useCallback(async () => {
         if (anyLoading) return;
+
         safeDispatch({ type: "SET", key: "error", value: "" });
         safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
 
@@ -113,15 +113,14 @@ function Login() {
                 credentials: "include",
             });
             const body = await res.json().catch(() => ({}));
+
             if (!res.ok || !body.flow_id) {
                 throw new Error(body.detail || "Failed to start OAuth flow");
             }
-            const fid = body.flow_id;
-            setFlowId(fid);
 
+            const fid = body.flow_id;
             const redirectTo = `${window.location.origin}/login?flow_id=${encodeURIComponent(fid)}`;
 
-            // trigger provider redirect via supabase client — provider will redirect back to redirectTo
             await supabase.auth.signInWithOAuth({
                 provider: "google",
                 options: { redirectTo, queryParams: { prompt: "select_account" } },
@@ -133,143 +132,110 @@ function Login() {
         }
     }, [anyLoading]);
 
-    // Poll backend for flow state
-    const startPolling = useCallback(
-        (fid) => {
-            if (!fid) return;
-            if (pollRef.current) {
-                clearInterval(pollRef.current);
-                pollRef.current = null;
-            }
+    const startPolling = useCallback((fid) => {
+        if (!fid) return;
 
-            const tick = async () => {
-                try {
-                    const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(fid)}`, {
-                        credentials: "include",
-                    });
-                    if (!res.ok) {
-                        // do nothing — maybe backend not updated yet
-                        return;
-                    }
-                    const body = await res.json().catch(() => null);
-                    if (!body) return;
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
 
-                    // statuses: pending, otp_required, needs_registration, complete, error
-                    if (body.status === "complete" && body.ok) {
-                        // backend likely set cookie; navigate home
-                        window.location.replace("/");
-                        return;
-                    }
+        const tick = async () => {
+            try {
+                const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(fid)}`, {
+                    credentials: "include",
+                });
 
-                    if (body.status === "otp_required") {
-                        safeDispatch({
-                            type: "SET_MANY",
-                            payload: { challengeId: body.challenge_id || null, maskedEmail: body.masked_email || "" },
-                        });
-                        if (pollRef.current) {
-                            clearInterval(pollRef.current);
-                            pollRef.current = null;
-                        }
-                        return;
-                    }
+                if (!res.ok) return;
 
-                    if (body.status === "needs_registration") {
-                        safeDispatch({ type: "SET", key: "oauthEmail", value: body.email || "" });
-                        setNeedsReg(true);
-                        if (pollRef.current) {
-                            clearInterval(pollRef.current);
-                            pollRef.current = null;
-                        }
-                        return;
-                    }
+                const body = await res.json().catch(() => null);
+                if (!body) return;
 
-                    if (body.status === "error") {
-                        safeDispatch({ type: "SET", key: "error", value: body.detail || "OAuth failed" });
-                        if (pollRef.current) {
-                            clearInterval(pollRef.current);
-                            pollRef.current = null;
-                        }
-                        return;
-                    }
-                    // else keep polling
-                } catch (err) {
-                    // ignore transient errors and keep polling
+                if (body.status === "complete" && body.ok) {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("flow_id");
+                    window.history.replaceState({}, "", url.pathname);
+                    window.location.replace("/");
+                    return;
                 }
-            };
 
-            tick();
-            pollRef.current = setInterval(tick, 1200);
-        },
-        [safeDispatch]
-    );
+                if (body.status === "otp_required") {
+                    safeDispatch({
+                        type: "SET_MANY",
+                        payload: {
+                            challengeId: body.challenge_id || null,
+                            maskedEmail: body.masked_email || "",
+                        },
+                    });
+                    clearInterval(pollRef.current);
+                    return;
+                }
 
-    // On mount: if returned from provider, url will have flow_id; finish exchange and poll
+                if (body.status === "needs_registration") {
+                    safeDispatch({ type: "SET", key: "oauthEmail", value: body.email || "" });
+                    setNeedsReg(true);
+                    clearInterval(pollRef.current);
+                    return;
+                }
+
+                if (body.status === "error") {
+                    safeDispatch({ type: "SET", key: "error", value: body.detail || "OAuth failed" });
+                    clearInterval(pollRef.current);
+                    return;
+                }
+            } catch {}
+        };
+
+        tick();
+        pollRef.current = setInterval(tick, 1200);
+    }, []);
+
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const fid = params.get("flow_id");
         if (!fid) return;
 
-        // remove query param
-        window.history.replaceState({}, "", "/login");
+        if (handledFlowRef.current === fid) return;
+        handledFlowRef.current = fid;
+
         setFlowId(fid);
         safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
 
         (async () => {
             try {
-                // try to read supabase client session to get provider token
-                const { data, error } = await supabase.auth.getSession();
-                if (error) {
-                    // start polling anyway
-                    startPolling(fid);
-                    return;
-                }
+                const { data } = await supabase.auth.getSession();
                 const session = data?.session;
-                if (!session) {
-                    startPolling(fid);
-                    return;
-                }
-                const access_token = session?.access_token ?? session?.accessToken ?? session?.provider_token ?? null;
-                if (!access_token) {
-                    startPolling(fid);
-                    return;
-                }
+                const access_token =
+                    session?.access_token ??
+                    session?.accessToken ??
+                    session?.provider_token ??
+                    null;
 
-                // send provider token to backend along with flow_id
-                const ac = new AbortController();
-                oauthAbortRef.current = ac;
+                if (access_token) {
+                    await fetch(`${backendUrlV1}/auth/oauth/login?flow_id=${encodeURIComponent(fid)}`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${access_token}`,
+                        },
+                        credentials: "include",
+                        body: JSON.stringify({ fingerprint: null }),
+                    });
+                }
+            } catch {}
 
-                await fetch(`${backendUrlV1}/auth/oauth/login?flow_id=${encodeURIComponent(fid)}`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${access_token}`,
-                    },
-                    credentials: "include",
-                    body: JSON.stringify({ fingerprint: null }), // pass fingerprint if you have it
-                    signal: ac.signal,
-                });
-                // start polling for final status
-                startPolling(fid);
-            } catch (err) {
-                // still start polling as backend might finish independently
-                startPolling(fid);
-            } finally {
-                oauthAbortRef.current = null;
-                safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
-            }
+            startPolling(fid);
+            safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
         })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [startPolling]);
 
     function cancelRegisterHandler() {
-        // clear UI only; backend flow remains until TTL expires
         setNeedsReg(false);
         setFlowId(null);
         safeDispatch({ type: "SET_MANY", payload: { challengeId: null, maskedEmail: "", oauthEmail: "" } });
     }
 
     function registerHandler() {
-        // navigate to register and pass flow_id in the URL so register page can read it and finish flow
         setNeedsReg(false);
         if (flowId) {
             navigate(`/register?flow_id=${encodeURIComponent(flowId)}`);
@@ -278,18 +244,17 @@ function Login() {
         }
     }
 
-    function resetLoginState({ clearOAuth = false } = {}) {
+    function resetLoginState() {
         dispatch({ type: "RESET" });
-        // we no longer clear browser storage here; backend owns OAuth flow
         setNeedsReg(false);
         setFlowId(null);
     }
 
-    // password login (unchanged semantics)
     const handlePasswordLogin = useCallback(
         async (e) => {
             e.preventDefault();
             if (anyLoading) return;
+
             safeDispatch({ type: "SET", key: "error", value: "" });
             safeDispatch({ type: "SET_LOADING", payload: { password: true } });
 
@@ -297,7 +262,13 @@ function Login() {
                 const res = await loginWithPassword(state.identifier, state.password);
 
                 if (res?.challenge === "otp_required") {
-                    safeDispatch({ type: "SET_MANY", payload: { challengeId: res.challenge_id, maskedEmail: res.masked_email || "" } });
+                    safeDispatch({
+                        type: "SET_MANY",
+                        payload: {
+                            challengeId: res.challenge_id,
+                            maskedEmail: res.masked_email || "",
+                        },
+                    });
                 }
             } catch (err) {
                 safeDispatch({ type: "SET", key: "error", value: err?.message || "Invalid credentials." });
@@ -312,6 +283,7 @@ function Login() {
         async (e) => {
             e.preventDefault();
             if (anyLoading) return;
+
             safeDispatch({ type: "SET", key: "error", value: "" });
             safeDispatch({ type: "SET_LOADING", payload: { otp: true } });
 
@@ -321,9 +293,8 @@ function Login() {
                     challenge_id: state.challengeId,
                     code: state.otp,
                 });
-                // backend will set cookie and auth hooks will redirect
             } catch (err) {
-                safeDispatch({ type: "SET", key: "error", value: err?.response?.data?.message || "Invalid OTP" });
+                safeDispatch({ type: "SET", key: "error", value: "Invalid OTP" });
             } finally {
                 safeDispatch({ type: "SET_LOADING", payload: { otp: false } });
             }
@@ -340,6 +311,7 @@ function Login() {
 
         safeDispatch({ type: "SET", key: "error", value: "" });
         safeDispatch({ type: "SET_LOADING", payload: { passkey: true } });
+
         try {
             await loginWithPasskey(state.identifier);
             window.location.replace(localStorage.getItem("redirectAfterLogin") || "/");
@@ -555,6 +527,8 @@ function Login() {
             </Modal>
         </div>
     );
+
+    
 }
 
 export default Login;

@@ -20,10 +20,11 @@ ENV VITE_SUPABASE_REDIRECT_URI=$VITE_SUPABASE_REDIRECT_URI
 COPY package.json package-lock.json* ./
 
 # Install dependencies
+# --legacy-peer-deps fixes npm 10 strict peer resolution failure
 RUN if [ -f package-lock.json ]; then \
-      npm ci --no-audit --no-fund; \
+      npm ci --no-audit --no-fund --legacy-peer-deps; \
     else \
-      npm install --no-audit --no-fund; \
+      npm install --no-audit --no-fund --legacy-peer-deps; \
     fi
 
 # Copy source

@@ -24,105 +24,20 @@ function Spinner({ className = "h-4 w-4 mr-2" }) {
     );
 }
 
-const OAUTH_KEYS = {
-    IN_PROGRESS: "oauth_in_progress",
-    TOKEN: "oauth_token",
-    EMAIL: "oauth_email",
-    CHALLENGE: "oauth_challenge",
-    REQUIRES_OTP: "oauth_requires_otp",
-    MASKED_EMAIL: "oauth_masked_email",
-    REQUIRES_REGISTRATION: "oauth_requires_registration",
-};
-
-function setOAuthKey(key, value) {
-    if (value === undefined || value === null) sessionStorage.removeItem(key);
-    else sessionStorage.setItem(key, value);
-}
-function getOAuthKey(key) {
-    return sessionStorage.getItem(key);
-}
-function clearOAuthKeys() {
-    Object.values(OAUTH_KEYS).forEach((k) => sessionStorage.removeItem(k));
-}
-
-// --- window.name per-tab persistence helpers ---
-// uses a single JSON object stored in window.name (safe per-tab across navigations)
-const WINDOW_NAME_KEY = "forkit_oauth_state_v1";
-function readWindowState() {
-    try {
-        if (!window?.name) return null;
-        const raw = window.name;
-        // window.name may contain other content; expect our JSON under a prefixed object
-        // Try parse as JSON: we support either entire window.name is the JSON or contains JSON under our key
-        try {
-            const parsed = JSON.parse(raw);
-            if (parsed && parsed[WINDOW_NAME_KEY]) return parsed[WINDOW_NAME_KEY];
-            // maybe the whole parsed object is our state
-            if (parsed && (parsed.in_progress !== undefined || parsed.challenge_id !== undefined)) return parsed;
-        } catch {
-            // try to find our JSON substring
-            const idx = raw.indexOf(WINDOW_NAME_KEY + ":");
-            if (idx >= 0) {
-                const substr = raw.slice(idx + WINDOW_NAME_KEY.length + 1);
-                try {
-                    return JSON.parse(substr);
-                } catch { /* ignore */ }
-            }
-        }
-    } catch (e) { /* ignore */ }
-    return null;
-}
-function writeWindowState(obj) {
-    try {
-        // preserve existing window.name content if it's not ours
-        let base = {};
-        try {
-            base = JSON.parse(window.name || "{}");
-        } catch {
-            // non-json content: keep it under __unsafe_other
-            base = { __unsafe_other: window.name || "" };
-        }
-        base[WINDOW_NAME_KEY] = { ...(base[WINDOW_NAME_KEY] || {}), ...obj };
-        window.name = JSON.stringify(base);
-    } catch (e) {
-        // best-effort; ignore errors
-    }
-}
-function clearWindowState() {
-    try {
-        let base = {};
-        try {
-            base = JSON.parse(window.name || "{}");
-        } catch {
-            // if not json, just clear entire window.name to be safe
-            window.name = "";
-            return;
-        }
-        if (base && base[WINDOW_NAME_KEY]) {
-            delete base[WINDOW_NAME_KEY];
-        }
-        // if base has no other keys, clear
-        if (Object.keys(base).length === 0) {
-            window.name = "";
-        } else {
-            window.name = JSON.stringify(base);
-        }
-    } catch { /* ignore */ }
-}
-
 const initialState = {
     identifier: "",
     password: "",
     otp: "",
     challengeId: null,
     maskedEmail: "",
+    oauthEmail: "", // used for modal description when backend claims needs_registration
     showPassword: false,
     error: "",
     loading: {
         password: false,
         otp: false,
         passkey: false,
-        oauth: false, // small internal flag to disable buttons during oauth start (no UI change)
+        oauth: false,
     },
 };
 
@@ -135,7 +50,10 @@ function reducer(state, action) {
         case "SET_LOADING":
             return { ...state, loading: { ...state.loading, ...action.payload } };
         case "RESET":
-            return { ...initialState, loading: { password: false, otp: false, passkey: false, oauth: false } };
+            return {
+                ...initialState,
+                loading: { password: false, otp: false, passkey: false, oauth: false },
+            };
         default:
             return state;
     }
@@ -143,8 +61,8 @@ function reducer(state, action) {
 
 function Login() {
     const [state, dispatch] = useReducer(reducer, initialState);
-    // include oauth loading in aggregated loading check so UI buttons get disabled while oauth begins
-    const anyLoading = state.loading.password || state.loading.otp || state.loading.passkey || state.loading.oauth;
+    const anyLoading =
+        state.loading.password || state.loading.otp || state.loading.passkey || state.loading.oauth;
 
     const navigate = useNavigate();
     const { loginWithPassword, verifyLoginOtp } = useAuthApi();
@@ -152,10 +70,8 @@ function Login() {
 
     const isMountedRef = useRef(true);
     const oauthAbortRef = useRef(null);
-    // initialize inProgressRef from sessionStorage OR window.name
-    const initialInProgress = Boolean(getOAuthKey(OAUTH_KEYS.IN_PROGRESS)) || Boolean((readWindowState() || {}).in_progress);
-    const inProgressRef = useRef(initialInProgress);
-
+    const pollRef = useRef(null);
+    const [flowId, setFlowId] = useState(null);
     const [needsReg, setNeedsReg] = useState(false);
 
     function safeDispatch(action) {
@@ -163,32 +79,16 @@ function Login() {
     }
 
     useEffect(() => {
-        // Rehydrate OAuth state from sessionStorage so OTP UI survives redirects
-        const storedChallenge = getOAuthKey(OAUTH_KEYS.CHALLENGE);
-        const storedMasked = getOAuthKey(OAUTH_KEYS.MASKED_EMAIL);
-        if (storedChallenge) safeDispatch({ type: "SET", key: "challengeId", value: storedChallenge });
-        if (storedMasked) safeDispatch({ type: "SET", key: "maskedEmail", value: storedMasked });
-
-        // Also rehydrate from window.name fallback if sessionStorage was wiped
-        const winState = readWindowState();
-        if (winState) {
-            if (!storedChallenge && winState.challenge_id) safeDispatch({ type: "SET", key: "challengeId", value: winState.challenge_id });
-            if (!storedMasked && winState.masked_email) safeDispatch({ type: "SET", key: "maskedEmail", value: winState.masked_email });
-            if (winState.requires_registration && sessionStorage.getItem(OAUTH_KEYS.REQUIRES_REGISTRATION) !== "1") {
-                // mirror into sessionStorage so other parts of your app that rely on it still work
-                sessionStorage.setItem(OAUTH_KEYS.REQUIRES_REGISTRATION, "1");
-                setNeedsReg(true);
-            }
-        }
-    }, []);
-
-    useEffect(() => {
         return () => {
             isMountedRef.current = false;
             if (oauthAbortRef.current) {
                 try {
                     oauthAbortRef.current.abort();
-                } catch { }
+                } catch {}
+            }
+            if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
             }
         };
     }, []);
@@ -201,289 +101,191 @@ function Login() {
         }
     }, [me, navigate]);
 
-    useEffect(() => {
-        if (sessionStorage.getItem(OAUTH_KEYS.REQUIRES_REGISTRATION) === "1") {
-            setNeedsReg(true);
-        }
-    }, []);
-
-    // cross-tab storage listener
-    useEffect(() => {
-        function onStorage(e) {
-            if (!e.key) return;
-            if (e.key === OAUTH_KEYS.IN_PROGRESS) {
-                inProgressRef.current = Boolean(getOAuthKey(OAUTH_KEYS.IN_PROGRESS)) || Boolean((readWindowState() || {}).in_progress);
-            }
-            if (e.key === OAUTH_KEYS.CHALLENGE || e.key === OAUTH_KEYS.MASKED_EMAIL) {
-                safeDispatch({ type: "SET", key: "challengeId", value: getOAuthKey(OAUTH_KEYS.CHALLENGE) });
-                safeDispatch({ type: "SET", key: "maskedEmail", value: getOAuthKey(OAUTH_KEYS.MASKED_EMAIL) });
-            }
-            if (!getOAuthKey(OAUTH_KEYS.CHALLENGE)) {
-                // only clear UI challenge if neither sessionStorage nor window.name claims it
-                const win = readWindowState();
-                if (!win || !win.challenge_id) {
-                    safeDispatch({ type: "SET_MANY", payload: { challengeId: null, maskedEmail: "" } });
-                }
-            }
-        }
-        window.addEventListener("storage", onStorage);
-        return () => window.removeEventListener("storage", onStorage);
-    }, []);
-
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const oauth = params.get("oauth");
-        const registered = params.get("registered");
-
-        // check window.name fallback for in-progress flows so we don't clear during mobile suspends
-        const winState = readWindowState();
-        const winInProgress = Boolean(winState && winState.in_progress);
-
-        const hasActiveOAuth =
-            getOAuthKey(OAUTH_KEYS.IN_PROGRESS) ||
-            getOAuthKey(OAUTH_KEYS.CHALLENGE) ||
-            oauth ||
-            registered ||
-            winInProgress;
-
-        if (!hasActiveOAuth) {
-            console.log("No active OAuth flow detected on mount, clearing any stale state.");
-            // This is a brand new login session
-            resetLoginState({ clearOAuth: true });
-        } else {
-            console.log("Active OAuth flow detected on mount, rehydrating state from sessionStorage or window.name.");
-            // If window.name has persisted values, ensure they are mirrored into sessionStorage so other flows (register) work
-            if (winState) {
-                if (winState.token) sessionStorage.setItem(OAUTH_KEYS.TOKEN, winState.token);
-                if (winState.email) sessionStorage.setItem(OAUTH_KEYS.EMAIL, winState.email);
-                if (winState.challenge_id) sessionStorage.setItem(OAUTH_KEYS.CHALLENGE, winState.challenge_id);
-                if (winState.masked_email) sessionStorage.setItem(OAUTH_KEYS.MASKED_EMAIL, winState.masked_email);
-                if (winState.requires_registration) sessionStorage.setItem(OAUTH_KEYS.REQUIRES_REGISTRATION, "1");
-            }
-        }
-    }, []);
-
-    // Start Google OAuth (triggers Supabase redirect)
+    // Start OAuth flow: ask backend for a flow_id, redirect provider with flow_id
     const handleGoogleLogin = useCallback(async () => {
-        // set oauth loading so UI buttons get disabled (no visible UI change)
+        if (anyLoading) return;
+        safeDispatch({ type: "SET", key: "error", value: "" });
         safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
 
-        // prevent double invocation across tabs
-        setOAuthKey(OAUTH_KEYS.IN_PROGRESS, "1");
-        inProgressRef.current = true;
-
-        // clear transient oauth values before starting new flow (sessionStorage)
-        sessionStorage.removeItem(OAUTH_KEYS.EMAIL);
-        sessionStorage.removeItem(OAUTH_KEYS.CHALLENGE);
-        sessionStorage.removeItem(OAUTH_KEYS.TOKEN);
-        sessionStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
-
-        // persist minimal state into window.name so it survives navigations on mobile
-        writeWindowState({ in_progress: true, started_at: Date.now() });
-
-        const redirectTo = `${window.location.origin}/login?oauth=1`;
-
         try {
+            const res = await fetch(`${backendUrlV1}/auth/oauth/start`, {
+                method: "POST",
+                credentials: "include",
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok || !body.flow_id) {
+                throw new Error(body.detail || "Failed to start OAuth flow");
+            }
+            const fid = body.flow_id;
+            setFlowId(fid);
+
+            const redirectTo = `${window.location.origin}/login?flow_id=${encodeURIComponent(fid)}`;
+
+            // trigger provider redirect via supabase client — provider will redirect back to redirectTo
             await supabase.auth.signInWithOAuth({
                 provider: "google",
-                options: {
-                    redirectTo,
-                    queryParams: { prompt: "select_account" },
-                },
+                options: { redirectTo, queryParams: { prompt: "select_account" } },
             });
-            // Supabase will redirect — no further work here
         } catch (err) {
-            inProgressRef.current = false;
-            sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
-            clearWindowState();
             safeDispatch({ type: "SET", key: "error", value: err?.message || "OAuth initiation failed" });
         } finally {
-            // stop showing oauth start-loading only when page hasn't navigated away
-            // (if redirect happens, the unload will naturally replace JS context)
             safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
         }
-    }, []);
+    }, [anyLoading]);
 
-    // backend exchange for oauth token -> site session
-    const handleOAuth = useCallback(
-        async ({ registered = false } = {}) => {
+    // Poll backend for flow state
+    const startPolling = useCallback(
+        (fid) => {
+            if (!fid) return;
+            if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+            }
+
+            const tick = async () => {
+                try {
+                    const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(fid)}`, {
+                        credentials: "include",
+                    });
+                    if (!res.ok) {
+                        // do nothing — maybe backend not updated yet
+                        return;
+                    }
+                    const body = await res.json().catch(() => null);
+                    if (!body) return;
+
+                    // statuses: pending, otp_required, needs_registration, complete, error
+                    if (body.status === "complete" && body.ok) {
+                        // backend likely set cookie; navigate home
+                        window.location.replace("/");
+                        return;
+                    }
+
+                    if (body.status === "otp_required") {
+                        safeDispatch({
+                            type: "SET_MANY",
+                            payload: { challengeId: body.challenge_id || null, maskedEmail: body.masked_email || "" },
+                        });
+                        if (pollRef.current) {
+                            clearInterval(pollRef.current);
+                            pollRef.current = null;
+                        }
+                        return;
+                    }
+
+                    if (body.status === "needs_registration") {
+                        safeDispatch({ type: "SET", key: "oauthEmail", value: body.email || "" });
+                        setNeedsReg(true);
+                        if (pollRef.current) {
+                            clearInterval(pollRef.current);
+                            pollRef.current = null;
+                        }
+                        return;
+                    }
+
+                    if (body.status === "error") {
+                        safeDispatch({ type: "SET", key: "error", value: body.detail || "OAuth failed" });
+                        if (pollRef.current) {
+                            clearInterval(pollRef.current);
+                            pollRef.current = null;
+                        }
+                        return;
+                    }
+                    // else keep polling
+                } catch (err) {
+                    // ignore transient errors and keep polling
+                }
+            };
+
+            tick();
+            pollRef.current = setInterval(tick, 1200);
+        },
+        [safeDispatch]
+    );
+
+    // On mount: if returned from provider, url will have flow_id; finish exchange and poll
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const fid = params.get("flow_id");
+        if (!fid) return;
+
+        // remove query param
+        window.history.replaceState({}, "", "/login");
+        setFlowId(fid);
+        safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
+
+        (async () => {
             try {
-                sessionStorage.setItem(OAUTH_KEYS.IN_PROGRESS, "1");
-                // reflect in window.name too (helps mobile)
-                writeWindowState({ in_progress: true });
-
-                inProgressRef.current = true;
-
-                let access_token;
-                let email;
-
-                if (!registered) {
-                    const { data, error } = await supabase.auth.getSession();
-                    if (error) throw error;
-
-                    const session = data?.session;
-                    if (!session) return;
-
-                    access_token = session?.access_token ?? session?.accessToken ?? session?.provider_token ?? null;
-                    email = session?.user?.email;
-
-                    if (!access_token) return;
-
-                    sessionStorage.setItem(OAUTH_KEYS.TOKEN, access_token);
-                    sessionStorage.setItem(OAUTH_KEYS.EMAIL, String(email));
-                    // also mirror into window.name so it's robust
-                    writeWindowState({ token: access_token, email: String(email) });
-                } else {
-                    access_token = sessionStorage.getItem(OAUTH_KEYS.TOKEN);
-                    email = sessionStorage.getItem(OAUTH_KEYS.EMAIL);
+                // try to read supabase client session to get provider token
+                const { data, error } = await supabase.auth.getSession();
+                if (error) {
+                    // start polling anyway
+                    startPolling(fid);
+                    return;
+                }
+                const session = data?.session;
+                if (!session) {
+                    startPolling(fid);
+                    return;
+                }
+                const access_token = session?.access_token ?? session?.accessToken ?? session?.provider_token ?? null;
+                if (!access_token) {
+                    startPolling(fid);
+                    return;
                 }
 
-                const fingerprint = window.localStorage.getItem("device_fp") || null;
-
-                // allow cancellation on unmount
+                // send provider token to backend along with flow_id
                 const ac = new AbortController();
                 oauthAbortRef.current = ac;
 
-                const res = await fetch(`${backendUrlV1}/auth/oauth/login`, {
+                await fetch(`${backendUrlV1}/auth/oauth/login?flow_id=${encodeURIComponent(fid)}`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                         Authorization: `Bearer ${access_token}`,
                     },
                     credentials: "include",
-                    body: JSON.stringify({ fingerprint }),
+                    body: JSON.stringify({ fingerprint: null }), // pass fingerprint if you have it
                     signal: ac.signal,
                 });
-
-                const body = await res.json().catch(() => ({}));
-
-                if (!res.ok) {
-                    safeDispatch({ type: "SET", key: "error", value: body.detail || "OAuth login failed" });
-                    return;
-                }
-
-                // fully logged in
-                if (body.ok && !body.needs_registration) {
-                    // clean sessionStorage + window.name
-                    sessionStorage.removeItem(OAUTH_KEYS.EMAIL);
-                    sessionStorage.removeItem(OAUTH_KEYS.CHALLENGE);
-                    sessionStorage.removeItem(OAUTH_KEYS.TOKEN);
-                    sessionStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
-                    clearWindowState();
-                    window.history.replaceState({}, "", "/login");
-                    window.location.replace("/");
-                    return;
-                }
-
-                if (body.challenge === "otp_required") {
-                    sessionStorage.setItem(OAUTH_KEYS.CHALLENGE, body.challenge_id);
-                    sessionStorage.setItem(OAUTH_KEYS.MASKED_EMAIL, body.masked_email);
-                    sessionStorage.setItem(OAUTH_KEYS.REQUIRES_OTP, "1");
-                    // mirror to window.name for robustness
-                    writeWindowState({ challenge_id: body.challenge_id, masked_email: body.masked_email });
-                }
-
-                if (body.needs_registration) {
-                    sessionStorage.setItem(OAUTH_KEYS.EMAIL, body.email);
-                    sessionStorage.setItem(OAUTH_KEYS.CHALLENGE, body.challenge_id);
-                    sessionStorage.setItem(OAUTH_KEYS.REQUIRES_REGISTRATION, "1");
-                    // mirror to window.name for robustness
-                    writeWindowState({ email: body.email, challenge_id: body.challenge_id, requires_registration: true });
-                    // set UI flag
-                    setNeedsReg(true);
-                }
+                // start polling for final status
+                startPolling(fid);
             } catch (err) {
-                if (err?.name === "AbortError") {
-
-                } else {
-                    safeDispatch({ type: "SET", key: "error", value: err?.message || "OAuth flow failed" });
-                }
+                // still start polling as backend might finish independently
+                startPolling(fid);
             } finally {
-                sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
-                // clear in-progress marker in window.name too
-                // but only if flow completed or errored
-                const win = readWindowState();
-                if (win && !win.challenge_id && !win.requires_registration) {
-                    clearWindowState();
-                } else if (!win) {
-                    clearWindowState();
-                } else {
-                    // keep some items (challenge etc) but remove in_progress flag
-                    writeWindowState({ in_progress: false });
-                }
-
-                inProgressRef.current = false;
                 oauthAbortRef.current = null;
+                safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
             }
-        },
-        [navigate]
-    );
-
-    function registerHandler() {
-        safeDispatch({ type: "SET_MANY", payload: { challengeId: sessionStorage.getItem(OAUTH_KEYS.CHALLENGE), maskedEmail: sessionStorage.getItem(OAUTH_KEYS.MASKED_EMAIL) || "" } });
-        window.history.replaceState({}, "", "/login");
-        sessionStorage.removeItem(OAUTH_KEYS.REQUIRES_REGISTRATION);
-        // mirror: remove the requires_registration from window.name
-        const ws = readWindowState();
-        if (ws) {
-            writeWindowState({ requires_registration: false });
-        }
-        navigate("/register?oauth=1");
-    }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     function cancelRegisterHandler() {
-        inProgressRef.current = false;
-        oauthAbortRef.current = null;
-        clearOAuthKeys();
-        clearWindowState();
-        window.history.replaceState({}, "", "/login");
-        navigate("/login");
+        // clear UI only; backend flow remains until TTL expires
+        setNeedsReg(false);
+        setFlowId(null);
+        safeDispatch({ type: "SET_MANY", payload: { challengeId: null, maskedEmail: "", oauthEmail: "" } });
+    }
+
+    function registerHandler() {
+        // navigate to register and pass flow_id in the URL so register page can read it and finish flow
+        setNeedsReg(false);
+        if (flowId) {
+            navigate(`/register?flow_id=${encodeURIComponent(flowId)}`);
+        } else {
+            navigate("/register");
+        }
     }
 
     function resetLoginState({ clearOAuth = false } = {}) {
         dispatch({ type: "RESET" });
-
-        if (clearOAuth) {
-            sessionStorage.removeItem(OAUTH_KEYS.EMAIL);
-            sessionStorage.removeItem(OAUTH_KEYS.CHALLENGE);
-            sessionStorage.removeItem(OAUTH_KEYS.TOKEN);
-            sessionStorage.removeItem(OAUTH_KEYS.MASKED_EMAIL);
-            sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
-            clearWindowState();
-        }
+        // we no longer clear browser storage here; backend owns OAuth flow
+        setNeedsReg(false);
+        setFlowId(null);
     }
 
-    // mount logic: only start oauth if URL parameters indicate so
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const oauth = params.get("oauth");
-        const registered = params.get("registered");
-
-        if (!oauth && !registered) return;
-
-        // avoid leaking query params
-        window.history.replaceState({}, "", "/login");
-
-        // set in-progress then run exchange
-        sessionStorage.setItem(OAUTH_KEYS.IN_PROGRESS, "1");
-        // mirror into window.name so mobile survives reload
-        writeWindowState({ in_progress: true });
-
-        inProgressRef.current = true;
-
-        (async () => {
-            try {
-                await handleOAuth({ registered: Boolean(registered) });
-            } finally {
-                sessionStorage.removeItem(OAUTH_KEYS.IN_PROGRESS);
-                // mark in_progress false in window.name (but keep challenge if present)
-                writeWindowState({ in_progress: false });
-                inProgressRef.current = false;
-            }
-        })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [handleOAuth]);
-
+    // password login (unchanged semantics)
     const handlePasswordLogin = useCallback(
         async (e) => {
             e.preventDefault();
@@ -496,10 +298,6 @@ function Login() {
 
                 if (res?.challenge === "otp_required") {
                     safeDispatch({ type: "SET_MANY", payload: { challengeId: res.challenge_id, maskedEmail: res.masked_email || "" } });
-                    if (res.challenge_id) sessionStorage.setItem(OAUTH_KEYS.CHALLENGE, res.challenge_id);
-                    if (res.masked_email) sessionStorage.setItem(OAUTH_KEYS.MASKED_EMAIL, res.masked_email);
-                    // mirror to window.name so it survives redirect
-                    writeWindowState({ challenge_id: res.challenge_id, masked_email: res.masked_email || "" });
                 }
             } catch (err) {
                 safeDispatch({ type: "SET", key: "error", value: err?.message || "Invalid credentials." });
@@ -519,12 +317,11 @@ function Login() {
 
             try {
                 await verifyLoginOtp({
-                    identifier: state.identifier || sessionStorage.getItem(OAUTH_KEYS.EMAIL),
-                    challenge_id: state.challengeId || sessionStorage.getItem(OAUTH_KEYS.CHALLENGE),
+                    identifier: state.identifier || undefined,
+                    challenge_id: state.challengeId,
                     code: state.otp,
                 });
-                clearOAuthKeys();
-                clearWindowState();
+                // backend will set cookie and auth hooks will redirect
             } catch (err) {
                 safeDispatch({ type: "SET", key: "error", value: err?.response?.data?.message || "Invalid OTP" });
             } finally {
@@ -551,9 +348,9 @@ function Login() {
         } finally {
             safeDispatch({ type: "SET_LOADING", payload: { passkey: false } });
         }
-    }, [anyLoading, state.identifier]);
+    }, [anyLoading, state.identifier, loginWithPasskey]);
 
-    const hasChallenge = Boolean(state.challengeId && sessionStorage.getItem(OAUTH_KEYS.CHALLENGE));
+    const hasChallenge = Boolean(state.challengeId);
 
     return (
         <div className="min-h-screen flex items-center justify-center">
@@ -679,7 +476,7 @@ function Login() {
                         <form onSubmit={handleVerifyOtp} className="w-full flex pt-4 border-t justify-center border-gray-700 space-y-3">
                             <div className="w-fit space-y-3">
                                 <p className="text-sm text-gray-400 text-center">
-                                    Enter the code sent to {state.maskedEmail || sessionStorage.getItem(OAUTH_KEYS.MASKED_EMAIL)}
+                                    Enter the code sent to {state.maskedEmail || state.oauthEmail}
                                 </p>
 
                                 <input
@@ -737,7 +534,7 @@ function Login() {
                 lock
                 type="warning"
                 title="No account found"
-                description={`We couldn't find an account for ${sessionStorage.getItem(OAUTH_KEYS.EMAIL) || "this email"}. What would you like to do?`}
+                description={`We couldn't find an account for ${state.oauthEmail || "this email"}. What would you like to do?`}
                 primaryAction={{
                     label: "Register a new account",
                     onClick: registerHandler,
@@ -749,7 +546,7 @@ function Login() {
             >
                 <div className="p-3 text-sm text-zinc-300">
                     <p className="mb-2">
-                        Registering will create a new site account for <strong>{sessionStorage.getItem(OAUTH_KEYS.EMAIL) || "this email"}</strong> with OAuth login.
+                        Registering will create a new site account for <strong>{state.oauthEmail || "this email"}</strong> with OAuth login.
                     </p>
                     <p className="mb-2">
                         If you wish, you can also register a password login from your account settings after registering, but it&apos;s not mandatory.

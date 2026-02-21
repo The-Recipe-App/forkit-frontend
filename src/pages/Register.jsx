@@ -153,7 +153,9 @@ export default function Register() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const cooldownRef = useRef(null);
   const navigate = useNavigate();
-  const isOAuth = new URLSearchParams(window.location.search).get("oauth") === "1";
+  // OAuth detection via flow_id in URL (server-owned flow)
+  const flowId = new URLSearchParams(window.location.search).get("flow_id");
+  const isOAuth = Boolean(new URLSearchParams(window.location.search).get("oauth") === "1") || Boolean(flowId);
 
   // cooldown timer
   useEffect(() => {
@@ -242,13 +244,13 @@ export default function Register() {
       const metaRes = await fetch(`${LEGAL_BASE}/active?meta_only=1`, {
         cache: "no-store",
       });
-      
+
       metaBody = await metaRes.json().catch(() => null);
       if (!metaRes.ok || !metaBody) {
         const fallback = await fetch(`${LEGAL_BASE}/active`, {
           cache: "no-store",
         });
-        
+
         metaBody = await fallback.json().catch(() => null);
         if (!fallback.ok) throw new Error("Failed to load policies (both meta and fallback failed)");
       }
@@ -301,6 +303,7 @@ export default function Register() {
   }
 
   async function loadPolicyFull(key) {
+    // exact same logic as your original file (unchanged)
     console.log(key);
     // toggle hide if already loaded
     if (state.policiesFull[key]) {
@@ -315,7 +318,7 @@ export default function Register() {
 
       console.warn("Policy meta not found for key:", key, "— falling back to API endpoints.");
       try {
-        setPolicyLoadingKey(key);
+        dispatch({ type: "SET", key: "policyLoadingKey", value: key });
         const tryUrls = [
           `${LEGAL_BASE}/${encodeURIComponent(key)}/versions`,
           `${LEGAL_BASE}/${encodeURIComponent(key)}`,
@@ -370,8 +373,6 @@ export default function Register() {
       if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
       return fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`;
     })(meta.file_url);
-    
-    
 
     dispatch({ type: "SET", key: "policyLoadingKey", value: key });
     try {
@@ -444,18 +445,14 @@ export default function Register() {
 
       let res;
 
-      if (isOAuth) {
+      if (isOAuth && flowId) {
         dispatch({ type: "SET", key: "stage", value: "oauthfinal" });
-        const accessToken = sessionStorage.getItem("oauth_token");
 
-        if (!accessToken) {
-          throw new Error("OAuth session expired. Please login again.");
-        }
+        // Call backend flow-aware registration endpoint. Backend will use server side flow keyed by flowId.
         res = await fetch(`${backendUrlV1}/auth/oauth/registration/register`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
           },
           credentials: "include",
           body: JSON.stringify({
@@ -464,6 +461,7 @@ export default function Register() {
             consents,
             age_verified: true,
             age_verification_method: "self_asserted",
+            flow_id: flowId,
           }),
         });
       } else {
@@ -522,21 +520,35 @@ export default function Register() {
   const usernameStatus = useUsernameAvailabilitySimple(state.userName, Boolean(state.userName));
   const isUsernameValid = !state.userName || usernameStatus === "available";
 
+  // If flow_id present, populate email/challenge from backend flow store and go to consent
   useEffect(() => {
-    if (!isOAuth) return;
+    if (!flowId) return;
 
-    const storedEmail = sessionStorage.getItem("oauth_email");
-    const storedChallenge = sessionStorage.getItem("oauth_challenge");
-
-    if (!storedEmail && !storedChallenge) {
-      navigate("/register");
-      return;
-    }
-
-    dispatch({ type: "SET_MANY", payload: { email: storedEmail, challengeId: storedChallenge, stage: "consent" } });
-    handlePolicyStep();
+    (async () => {
+      try {
+        const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(flowId)}`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          navigate("/register");
+          return;
+        }
+        const body = await res.json().catch(() => null);
+        if (!body) {
+          navigate("/register");
+          return;
+        }
+        if (body.email) dispatch({ type: "SET", key: "email", value: body.email });
+        if (body.challenge_id) dispatch({ type: "SET", key: "challengeId", value: body.challenge_id });
+        // Move to consent stage
+        dispatch({ type: "SET", key: "stage", value: "consent" });
+        await handlePolicyStep();
+      } catch (err) {
+        navigate("/register");
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOAuth, navigate]);
+  }, [flowId, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">

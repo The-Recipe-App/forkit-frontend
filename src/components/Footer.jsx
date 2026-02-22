@@ -60,8 +60,9 @@ const Footer = ({ navOverlay, navOpen, isAuthorized }) => {
                                 label="AGPL-3.0 License"
                                 external
                             />
-                            <FooterLink href="/privacy" label="Privacy Policy" />
-                            <FooterLink href="/terms" label="Terms of Use" />
+                            <FooterLink href="/legal/privacy" label="Privacy Policy" />
+                            <FooterLink href="/legal/tos" label="Terms of Use" />
+                            <FooterLink href="/legal/community_guidelines" label="Community Guidelines" />
                         </FooterSection>
                     </div>
                 </div>

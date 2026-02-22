@@ -350,7 +350,7 @@ export default function Register() {
     const meta = policiesMeta.find((p) => p.key === key || p.id === key || p.slug === key);
     if (!meta) {
 
-      console.warn("Policy meta not found for key:", key, "— falling back to API endpoints.");
+      console.warn("Policy meta not found for key:", key, "- falling back to API endpoints.");
       try {
         setPolicyLoadingKey(key);
         const tryUrls = [

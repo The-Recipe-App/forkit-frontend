@@ -1,11 +1,11 @@
 import { React } from "react";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import { Provider } from "react-redux";
-import { Toaster } from "react-hot-toast";
+import { ToastContainer } from 'react-toastify';
 import store from "./store";
 import Home from "./pages/Home";
 import MainAppLayout from "./layouts/MainAppLayout";
-import { ContextProvider  } from "./features/ContextProvider";
+import { ContextProvider } from "./features/ContextProvider";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Login from "./pages/Login";
@@ -28,7 +28,7 @@ function App() {
     { path: "/recipes/:id/fork", element: <ForkEditor /> },
     { path: "/profile", element: <ProfileDashboard /> },
     { path: "/profile/:username", element: <ProfileDashboard /> },
-    { path: "/activate-account*", element: <ActivateAccount /> },
+    { path: "/activate-account/*", element: <ActivateAccount /> },
   ];
 
 
@@ -47,8 +47,10 @@ function App() {
 
   return (
     <Provider store={store}>
-      <Toaster position="top-right" reverseOrder={false} />
-      <RouterProvider router={router} />
+      <ToastContainer />
+      <RouterProvider future={{
+        v7_startTransition: true,
+      }} router={router} />
     </Provider>
   );
 }

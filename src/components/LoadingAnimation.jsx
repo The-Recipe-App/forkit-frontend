@@ -44,7 +44,7 @@ export default function LoadingScreen({
         return () => window.removeEventListener("resize", onResize);
     }, []);
 
-    // Phase progression while loading — only while loading
+    // Phase progression while loading - only while loading
     useEffect(() => {
         // clear any existing phase timer
         if (phaseTimerRef.current) {

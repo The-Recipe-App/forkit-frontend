@@ -1,5 +1,4 @@
-// Login.jsx
-import { useCallback, useEffect, useRef, useReducer, useState } from "react";
+import { useCallback, useEffect, useRef, useReducer, useState, useMemo } from "react";
 import Logo from "../features/Logo";
 import { useAuthApi } from "../features/auth/authApi";
 import { useNavigate } from "react-router-dom";
@@ -8,21 +7,47 @@ import { loginWithPasskey } from "../features/auth/passkey";
 import { supabase } from "../lib/supabase";
 import backendUrlV1 from "../urls/backendUrl";
 import Modal from "../components/popUpModal";
+import { useContextManager } from "../features/ContextProvider";
+import { Fingerprint } from "lucide-react";
 
-function Spinner({ className = "h-4 w-4 mr-2" }) {
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { Tooltip } from "react-tooltip";
+import ProcessingLoginCanvas from "../canvases/ProcessingLoginCanvas";
+
+
+function Spinner({ size = 20, className = "" }) {
     return (
         <svg
-            className={`animate-spin ${className}`}
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
+            width={size}
+            height={size}
             viewBox="0 0 24 24"
+            className={`animate-spin ${className}`}
+            role="img"
             aria-hidden="true"
         >
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            <defs>
+                <linearGradient id="spinnerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#f97316" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#f97316" stopOpacity="0.2" />
+                </linearGradient>
+            </defs>
+
+            <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="url(#spinnerGradient)"
+                strokeWidth="3"
+                strokeLinecap="round"
+                fill="none"
+                strokeDasharray="60"
+                strokeDashoffset="20"
+            />
         </svg>
     );
 }
+
 
 const initialState = {
     identifier: "",
@@ -61,16 +86,29 @@ function reducer(state, action) {
 
 function Login() {
     const [state, dispatch] = useReducer(reducer, initialState);
-    const anyLoading =
-        state.loading.password || state.loading.otp || state.loading.passkey || state.loading.oauth;
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+    const anyLoading = useMemo(
+        () =>
+            state.loading.password ||
+            state.loading.otp ||
+            state.loading.passkey ||
+            state.loading.oauth,
+        [state.loading]
+    );
+
+    const { setIsLoading } = useContextManager();
 
     const navigate = useNavigate();
     const { loginWithPassword, verifyLoginOtp } = useAuthApi();
     const { data: me } = useMe();
 
+
     const isMountedRef = useRef(true);
-    const oauthAbortRef = useRef(null);
-    const pollRef = useRef(null);
+    const oauthStartAbortRef = useRef(null);
+    const oauthLoginAbortRef = useRef(null);
+    const pollAbortRef = useRef(null);
+    const pollTimerRef = useRef(null);
     const handledFlowRef = useRef(null);
 
     const [flowId, setFlowId] = useState(null);
@@ -83,12 +121,24 @@ function Login() {
     useEffect(() => {
         return () => {
             isMountedRef.current = false;
-            if (oauthAbortRef.current) {
-                try { oauthAbortRef.current.abort(); } catch {}
+            if (oauthStartAbortRef.current) {
+                try {
+                    oauthStartAbortRef.current.abort();
+                } catch { }
             }
-            if (pollRef.current) {
-                clearInterval(pollRef.current);
-                pollRef.current = null;
+            if (oauthLoginAbortRef.current) {
+                try {
+                    oauthLoginAbortRef.current.abort();
+                } catch { }
+            }
+            if (pollAbortRef.current) {
+                try {
+                    pollAbortRef.current.abort();
+                } catch { }
+            }
+            if (pollTimerRef.current) {
+                clearInterval(pollTimerRef.current);
+                pollTimerRef.current = null;
             }
         };
     }, []);
@@ -101,49 +151,105 @@ function Login() {
         }
     }, [me, navigate]);
 
+    useEffect(() => {
+        const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+
+            if (session?.user) {
+                const email = session.user.email;
+                safeDispatch({ type: "SET", key: "oauthEmail", value: email || "" });
+
+                try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("req_id");
+                    window.history.replaceState({}, "", url.pathname);
+                } catch { }
+            }
+        });
+
+        return () => {
+            sub?.subscription?.unsubscribe?.();
+        };
+    }, []);
+
+
     const handleGoogleLogin = useCallback(async () => {
         if (anyLoading) return;
 
+        resetLoginState(false);
+        setIsLoggingIn(true);
         safeDispatch({ type: "SET", key: "error", value: "" });
         safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
+
+        if (oauthStartAbortRef.current) {
+            try {
+                oauthStartAbortRef.current.abort();
+            } catch { }
+            oauthStartAbortRef.current = null;
+        }
+        const controller = new AbortController();
+        oauthStartAbortRef.current = controller;
 
         try {
             const res = await fetch(`${backendUrlV1}/auth/oauth/start`, {
                 method: "POST",
                 credentials: "include",
+                signal: controller.signal,
             });
-            const body = await res.json().catch(() => ({}));
 
-            if (!res.ok || !body.flow_id) {
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok || !body.req_id) {
                 throw new Error(body.detail || "Failed to start OAuth flow");
             }
 
-            const fid = body.flow_id;
-            const redirectTo = `${window.location.origin}/login?flow_id=${encodeURIComponent(fid)}`;
+            const fid = body.req_id;
+
+            const redirectTo = `${window.location.origin}/login?req_id=${encodeURIComponent(fid)}`;
 
             await supabase.auth.signInWithOAuth({
                 provider: "google",
                 options: { redirectTo, queryParams: { prompt: "select_account" } },
             });
+
         } catch (err) {
-            safeDispatch({ type: "SET", key: "error", value: err?.message || "OAuth initiation failed" });
+            if (err?.name === "AbortError") {
+                safeDispatch({ type: "SET", key: "error", value: "OAuth start aborted" });
+                toast.error("OAuth start aborted");
+            } else {
+                const message = err?.message || "OAuth initiation failed";
+                safeDispatch({ type: "SET", key: "error", value: message });
+                toast.error(message);
+            }
         } finally {
+            oauthStartAbortRef.current = null;
             safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
         }
     }, [anyLoading]);
 
+
     const startPolling = useCallback((fid) => {
         if (!fid) return;
 
-        if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
+
+        if (pollTimerRef.current) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
         }
+        if (pollAbortRef.current) {
+            try {
+                pollAbortRef.current.abort();
+            } catch { }
+            pollAbortRef.current = null;
+        }
+
+        const controller = new AbortController();
+        pollAbortRef.current = controller;
 
         const tick = async () => {
             try {
+
                 const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(fid)}`, {
                     credentials: "include",
+                    signal: controller.signal,
                 });
 
                 if (!res.ok) return;
@@ -151,15 +257,22 @@ function Login() {
                 const body = await res.json().catch(() => null);
                 if (!body) return;
 
+
                 if (body.status === "complete" && body.ok) {
-                    const url = new URL(window.location.href);
-                    url.searchParams.delete("flow_id");
-                    window.history.replaceState({}, "", url.pathname);
+
+                    try {
+                        const url = new URL(window.location.href);
+                        url.searchParams.delete("req_id");
+                        window.history.replaceState({}, "", url.pathname);
+                    } catch { }
+
+                    toast.success("Logged in successfully");
                     window.location.replace("/");
                     return;
                 }
 
                 if (body.status === "otp_required") {
+                    controller.abort();
                     safeDispatch({
                         type: "SET_MANY",
                         payload: {
@@ -167,34 +280,45 @@ function Login() {
                             maskedEmail: body.masked_email || "",
                         },
                     });
-                    clearInterval(pollRef.current);
+
+                    toast.info(
+                        `OTP sent to ${body.masked_email || "your email"}. Enter it to continue.`,
+                        { autoClose: 5000 }
+                    );
+
                     return;
                 }
 
                 if (body.status === "needs_registration") {
                     safeDispatch({ type: "SET", key: "oauthEmail", value: body.email || "" });
                     setNeedsReg(true);
-                    clearInterval(pollRef.current);
+                    controller.abort();
                     return;
                 }
 
                 if (body.status === "error") {
-                    safeDispatch({ type: "SET", key: "error", value: body.detail || "OAuth failed" });
-                    clearInterval(pollRef.current);
+                    safeDispatch({ type: "SET", key: "error", value: body.message || "OAuth failed" });
+                    toast.error(body.message || "OAuth failed");
+                    controller.abort();
                     return;
                 }
-            } catch {}
+
+
+            } catch (err) {
+                // silent; network errors or aborts are expected during polling
+            }
         };
 
-        tick();
-        pollRef.current = setInterval(tick, 1200);
+        pollTimerRef.current = setInterval(tick, 1200);
     }, []);
+
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const fid = params.get("flow_id");
+        const fid = params.get("req_id");
         if (!fid) return;
 
+        setIsLoggingIn(true);
         if (handledFlowRef.current === fid) return;
         handledFlowRef.current = fid;
 
@@ -202,17 +326,26 @@ function Login() {
         safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
 
         (async () => {
+
+            if (oauthLoginAbortRef.current) {
+                try {
+                    oauthLoginAbortRef.current.abort();
+                } catch { }
+                oauthLoginAbortRef.current = null;
+            }
+            const controller = new AbortController();
+            oauthLoginAbortRef.current = controller;
+
             try {
+
                 const { data } = await supabase.auth.getSession();
                 const session = data?.session;
                 const access_token =
-                    session?.access_token ??
-                    session?.accessToken ??
-                    session?.provider_token ??
-                    null;
+                    session?.access_token ?? session?.accessToken ?? session?.provider_token ?? null;
 
                 if (access_token) {
-                    await fetch(`${backendUrlV1}/auth/oauth/login?flow_id=${encodeURIComponent(fid)}`, {
+
+                    await fetch(`${backendUrlV1}/auth/oauth/login?req_id=${encodeURIComponent(fid)}`, {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
@@ -220,14 +353,22 @@ function Login() {
                         },
                         credentials: "include",
                         body: JSON.stringify({ fingerprint: null }),
+                        signal: controller.signal,
                     });
                 }
-            } catch {}
+            } catch (err) {
+                console.warn("OAuth login polling error: ", err);
+            } finally {
+                oauthLoginAbortRef.current = null;
 
-            startPolling(fid);
-            safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
+                startPolling(fid);
+                safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
+            }
         })();
+
+
     }, [startPolling]);
+
 
     function cancelRegisterHandler() {
         setNeedsReg(false);
@@ -238,27 +379,46 @@ function Login() {
     function registerHandler() {
         setNeedsReg(false);
         if (flowId) {
-            navigate(`/register?flow_id=${encodeURIComponent(flowId)}`);
+            navigate(`/register?req_id=${encodeURIComponent(flowId)}`);
         } else {
             navigate("/register");
         }
     }
 
-    function resetLoginState() {
+
+    function resetLoginState(showToast = true) {
         dispatch({ type: "RESET" });
         setNeedsReg(false);
         setFlowId(null);
+
+
+        if (pollTimerRef.current) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+        }
+        if (pollAbortRef.current) {
+            try { pollAbortRef.current.abort(); } catch { }
+            pollAbortRef.current = null;
+        }
+        if (showToast) {
+            toast.info("Form reset");
+        }
     }
+
 
     const handlePasswordLogin = useCallback(
         async (e) => {
             e.preventDefault();
             if (anyLoading) return;
 
+            setIsLoggingIn(true);
             safeDispatch({ type: "SET", key: "error", value: "" });
             safeDispatch({ type: "SET_LOADING", payload: { password: true } });
 
             try {
+                if (!state.identifier || !state.password) {
+                    throw new Error("Please enter both your email/username and password");
+                }
                 const res = await loginWithPassword(state.identifier, state.password);
 
                 if (res?.challenge === "otp_required") {
@@ -269,15 +429,24 @@ function Login() {
                             maskedEmail: res.masked_email || "",
                         },
                     });
+                    toast.info(`OTP sent to ${res.masked_email || "your email"}.`);
+                } else {
+                    // assume successful password login (backend/session will cause redirect via me)
+                    toast.success("Signed in successfully");
                 }
+
             } catch (err) {
-                safeDispatch({ type: "SET", key: "error", value: err?.message || "Invalid credentials." });
+                const message = err?.message || "Invalid credentials.";
+                safeDispatch({ type: "SET", key: "error", value: message });
+                toast.error(message);
             } finally {
+                setIsLoggingIn(false);
                 safeDispatch({ type: "SET_LOADING", payload: { password: false } });
             }
         },
         [anyLoading, loginWithPassword, state.identifier, state.password]
     );
+
 
     const handleVerifyOtp = useCallback(
         async (e) => {
@@ -286,43 +455,55 @@ function Login() {
 
             safeDispatch({ type: "SET", key: "error", value: "" });
             safeDispatch({ type: "SET_LOADING", payload: { otp: true } });
+            setIsLoggingIn(true);
 
             try {
                 await verifyLoginOtp({
-                    identifier: state.identifier || undefined,
+                    identifier: state.identifier || state.oauthEmail || undefined,
                     challenge_id: state.challengeId,
                     code: state.otp,
                 });
+
             } catch (err) {
                 safeDispatch({ type: "SET", key: "error", value: "Invalid OTP" });
+                toast.error("Invalid OTP");
             } finally {
                 safeDispatch({ type: "SET_LOADING", payload: { otp: false } });
+                setIsLoggingIn(false);
             }
         },
         [anyLoading, verifyLoginOtp, state.identifier, state.challengeId, state.otp]
     );
 
+
     const handlePasskey = useCallback(async () => {
         if (!state.identifier) {
             dispatch({ type: "SET", key: "error", value: "Enter your email or username first." });
+            toast.error("Enter your email or username first.");
             return;
         }
         if (anyLoading) return;
 
+        setIsLoggingIn(true);
         safeDispatch({ type: "SET", key: "error", value: "" });
         safeDispatch({ type: "SET_LOADING", payload: { passkey: true } });
 
         try {
             await loginWithPasskey(state.identifier);
+            toast.success("Passkey authentication succeeded");
             window.location.replace(localStorage.getItem("redirectAfterLogin") || "/");
         } catch (err) {
-            safeDispatch({ type: "SET", key: "error", value: err?.message || "Passkey login failed" });
+            const message = err?.message || "Passkey login failed";
+            safeDispatch({ type: "SET", key: "error", value: message });
+            toast.error(message);
         } finally {
             safeDispatch({ type: "SET_LOADING", payload: { passkey: false } });
+            setIsLoggingIn(false);
         }
     }, [anyLoading, state.identifier, loginWithPasskey]);
 
     const hasChallenge = Boolean(state.challengeId);
+
 
     return (
         <div className="min-h-screen flex items-center justify-center">
@@ -330,177 +511,283 @@ function Login() {
                 <div className="flex justify-center mb-6">
                     <Logo width={140} />
                 </div>
-
                 <h1 className="text-xl font-semibold text-white text-center">Sign in to Forkit</h1>
-                <p className="text-sm text-gray-400 text-center mt-1">Use your password or a passkey.</p>
 
-                {state.error && (
-                    <div className="mt-4 text-sm text-red-400 text-center" role="alert" aria-live="assertive">
-                        {state.error}
-                    </div>
-                )}
+                {anyLoading || isLoggingIn ? (
+                    <ProcessingLoginCanvas />
+                ) : (
+                    <>
+                        {state.error && (
+                            <div
+                                className="mt-4 text-sm text-red-400 text-center underline px-3 py-2 bg-red-900/30 rounded-lg"
+                                role="alert"
+                                aria-live="assertive"
+                            >
+                                {state.error}
+                            </div>
+                        )}
 
-                <div className="space-y-4 mt-6">
-                    {!hasChallenge ? (
-                        <div className="flex flex-col justify-evenly">
-                            <div className="space-y-4 w-full">
-                                <input
-                                    type="text"
-                                    placeholder="Email or Username"
-                                    value={state.identifier}
-                                    onChange={(e) => dispatch({ type: "SET", key: "identifier", value: e.target.value })}
-                                    autoFocus
-                                    disabled={anyLoading}
-                                    aria-disabled={anyLoading}
-                                    className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white disabled:opacity-50"
-                                />
+                        <div className="space-y-4 mt-6">
+                            {!hasChallenge ? (
+                                <div className="flex flex-col justify-evenly">
+                                    {/* ---- IDENTIFIER + PASSWORD ---- */}
+                                    <div className="space-y-4 w-full">
+                                        <form onSubmit={handlePasswordLogin} className="space-y-4 w-full">
 
-                                <form onSubmit={handlePasswordLogin} className="space-y-3">
-                                    <div className="relative">
-                                        <input
-                                            type={state.showPassword ? "text" : "password"}
-                                            placeholder="Password"
-                                            value={state.password}
-                                            onChange={(e) => dispatch({ type: "SET", key: "password", value: e.target.value })}
-                                            disabled={anyLoading}
-                                            aria-disabled={anyLoading}
-                                            className="w-full px-4 py-2.5 pr-12 rounded-lg bg-neutral-900 border border-gray-700 text-white disabled:opacity-50"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => dispatch({ type: "SET", key: "showPassword", value: !state.showPassword })}
-                                            disabled={anyLoading}
-                                            aria-disabled={anyLoading}
-                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm disabled:opacity-50"
-                                        >
-                                            {state.showPassword ? "Hide" : "Show"}
-                                        </button>
+                                            {/* hidden username field improves password manager matching */}
+                                            <input
+                                                type="text"
+                                                name="username"
+                                                autoComplete="username"
+                                                value={state.identifier}
+                                                readOnly
+                                                tabIndex={-1}
+                                                className="hidden"
+                                            />
+
+                                            {/* ---------- IDENTIFIER ---------- */}
+                                            <div className="space-y-1">
+                                                <label htmlFor="identifier" className="sr-only">
+                                                    Email or username
+                                                </label>
+
+                                                <input
+                                                    id="identifier"
+                                                    type="text"
+                                                    name="identifier"
+                                                    autoComplete="username"
+                                                    inputMode="email"
+                                                    placeholder="Email or Username"
+                                                    value={state.identifier}
+                                                    onChange={(e) =>
+                                                        dispatch({
+                                                            type: "SET",
+                                                            key: "identifier",
+                                                            value: e.target.value,
+                                                        })
+                                                    }
+                                                    disabled={anyLoading}
+                                                    className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                                                />
+                                            </div>
+
+                                            {/* ---------- PASSWORD ---------- */}
+                                            <div className="relative space-y-1">
+                                                <label htmlFor="password" className="sr-only">
+                                                    Password
+                                                </label>
+
+                                                <input
+                                                    id="password"
+                                                    type={state.showPassword ? "text" : "password"}
+                                                    name="password"
+                                                    autoComplete="current-password"
+                                                    placeholder="Password"
+                                                    value={state.password}
+                                                    onChange={(e) =>
+                                                        dispatch({
+                                                            type: "SET",
+                                                            key: "password",
+                                                            value: e.target.value,
+                                                        })
+                                                    }
+                                                    disabled={anyLoading}
+                                                    className="w-full px-4 py-2.5 pr-12 rounded-lg bg-neutral-900 border border-gray-700 text-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-orange-500/40"
+                                                />
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        dispatch({
+                                                            type: "SET",
+                                                            key: "showPassword",
+                                                            value: !state.showPassword,
+                                                        })
+                                                    }
+                                                    disabled={anyLoading}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm disabled:opacity-50"
+                                                    aria-pressed={state.showPassword}
+                                                >
+                                                    {state.showPassword ? "Hide" : "Show"}
+                                                </button>
+                                            </div>
+
+                                            {/* ---------- SUBMIT ---------- */}
+                                            <button
+                                                type="submit"
+                                                disabled={anyLoading || !state.identifier || !state.password}
+                                                aria-busy={state.loading.password}
+                                                className={`w-full py-2.5 rounded-lg flex items-center justify-center ${anyLoading || !state.identifier || !state.password
+                                                    ? "bg-orange-600/70 cursor-not-allowed"
+                                                    : "bg-orange-600 hover:bg-orange-500"
+                                                    } text-white`}
+                                            >
+                                                {state.loading.password ? (
+                                                    <div className="text-xs flex items-center gap-x-2">
+                                                        <Spinner />
+                                                        <span>Signing in…</span>
+                                                    </div>
+                                                ) : (
+                                                    "Continue with Password"
+                                                )}
+                                            </button>
+                                        </form>
+
+                                        {/* ---- DIVIDER ---- */}
+                                        <div className="flex items-center gap-3 w-full my-5 text-gray-500 text-sm">
+                                            <div className="flex-1 h-px bg-gray-700" />
+                                            OR
+                                            <div className="flex-1 h-px bg-gray-700" />
+                                        </div>
                                     </div>
 
-                                    <button
-                                        type="submit"
-                                        disabled={anyLoading || !state.identifier}
-                                        aria-busy={state.loading.password}
-                                        className={`w-full py-2.5 rounded-lg flex items-center justify-center ${anyLoading || !state.identifier ? "bg-orange-600/70 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500"
-                                            } text-white disabled:opacity-50`}
-                                    >
-                                        {state.loading.password ? (
-                                            <>
-                                                <Spinner />
-                                                <span>Signing in…</span>
-                                            </>
-                                        ) : (
-                                            <span>Continue with Password</span>
-                                        )}
-                                    </button>
-                                </form>
+                                    {/* ---- PASSKEY + GOOGLE ---- */}
+                                    <div className={`flex flex-col md:flex-row gap-3 w-full items-center justify-center ${anyLoading ? "pointer-events-none" : ""}`}>
+                                        <button
+                                            onClick={() => {
+                                                if (anyLoading || !state.identifier) {
+                                                    dispatch({
+                                                        type: "SET",
+                                                        key: "error",
+                                                        value: "Enter your email or username first.",
+                                                    });
+                                                    toast.error("Enter your email or username first.");
+                                                } else {
+                                                    handlePasskey();
+                                                }
+                                            }}
+                                            data-tooltip-id={`${!state.identifier ? "no-data-passkey-tooltip" : ""}`}
+                                            aria-busy={state.loading.passkey}
+                                            className={`w-full py-2.5 rounded-lg border border-gray-600 flex items-center justify-center text-white hover:bg-white/5 disabled:opacity-50 ${!state.identifier ? "cursor-not-allowed" : ""}`}
+                                        >
+                                            {state.loading.passkey ? (
+                                                <div className="text-xs flex flex-row items-center gap-x-2">
+                                                    <Spinner />
+                                                    <span>Continuing with Passkey…</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-row items-center gap-x-2">
+                                                    <Fingerprint size={16} />
+                                                    <span>Continue with Passkey</span>
+                                                </div>
+                                            )}
+                                            <Tooltip id="no-data-passkey-tooltip" place="top" effect="solid" className="bg-gray-700 text-white text-xs px-2 py-1 rounded">
+                                                <p className="text-center">Enter your email or username first to use Passkey login.</p>
+                                            </Tooltip>
+                                        </button>
 
-                                <div className="flex items-center gap-3 w-full my-5 text-gray-500 text-sm">
-                                    <div className="flex-1 h-px bg-gray-700" />
-                                    OR
-                                    <div className="flex-1 h-px bg-gray-700" />
+                                        <button
+                                            onClick={handleGoogleLogin}
+                                            className={`w-full gap-x-2 py-2.5 rounded-lg border border-gray-600 flex items-center justify-center text-white hover:bg-white/5 disabled:opacity-50 ${anyLoading ? "cursor-not-allowed" : ""
+                                                }`}
+                                            disabled={anyLoading}
+                                            aria-busy={state.loading.oauth || isLoggingIn}
+                                        >
+                                            {anyLoading || state.loading.oauth || isLoggingIn ? (
+                                                <div className="text-xs flex flex-row items-center gap-x-2">
+                                                    <Spinner />
+                                                    <span>Continuing with Google...</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-row items-center gap-x-2">
+                                                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" xmlnsXlink="http://www.w3.org/1999/xlink" className="block w-5" aria-hidden="true">
+                                                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                                                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                                                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                                                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                                                        <path fill="none" d="M0 0h48v48H0z"></path>
+                                                    </svg>
+                                                    <span>Continue with Google</span>
+                                                </div>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-
-                            <div className="flex flex-col md:flex-row gap-3 w-full items-center justify-center">
-                                <button
-                                    onClick={() => {
-                                        if (!state.identifier) {
-                                            dispatch({ type: "SET", key: "error", value: "Enter your email or username first." });
-                                        } else {
-                                            handlePasskey();
-                                        }
-                                    }}
-                                    disabled={anyLoading || !state.identifier}
-                                    aria-busy={state.loading.passkey}
-                                    className={`w-full py-2.5 rounded-lg border border-gray-600 flex items-center justify-center text-white hover:bg-white/5 disabled:opacity-50 ${anyLoading || !state.identifier ? "cursor-not-allowed" : ""
-                                        }`}
+                            ) : (
+                                <form
+                                    onSubmit={handleVerifyOtp}
+                                    className="w-full flex pt-4 border-t justify-center border-gray-700"
                                 >
-                                    {state.loading.passkey ? (
-                                        <>
-                                            <Spinner />
-                                            <span>Continuing with Passkey…</span>
-                                        </>
-                                    ) : (
-                                        <span>Continue with Passkey</span>
-                                    )}
-                                </button>
+                                    <div className="w-fit space-y-3">
+                                        <p className="text-sm text-gray-400 text-center">
+                                            Enter the code sent to{" "}
+                                            <strong className="text-white">
+                                                {state.maskedEmail || state.oauthEmail || "your email"}
+                                            </strong>
+                                        </p>
 
-                                <div className="space-y-3 w-full">
-                                    <button
-                                        onClick={handleGoogleLogin}
-                                        className={`w-full gap-x-2 py-2.5 rounded-lg border border-gray-600 flex items-center justify-center text-white hover:bg-white/5 disabled:opacity-50 ${anyLoading ? "cursor-not-allowed" : ""
-                                            }`}
-                                    >
-                                        <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" xmlnsXlink="http://www.w3.org/1999/xlink" className="block w-5">
-                                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-                                            <path fill="none" d="M0 0h48v48H0z"></path>
-                                        </svg>
-                                        Continue with Google
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <form onSubmit={handleVerifyOtp} className="w-full flex pt-4 border-t justify-center border-gray-700 space-y-3">
-                            <div className="w-fit space-y-3">
+                                        <input
+                                            type="text"
+                                            placeholder="6-digit code"
+                                            value={state.otp}
+                                            onChange={(e) =>
+                                                dispatch({
+                                                    type: "SET",
+                                                    key: "otp",
+                                                    value: e.target.value,
+                                                })
+                                            }
+                                            maxLength={6}
+                                            disabled={anyLoading}
+                                            className="w-full px-4 py-2.5 text-center tracking-widest rounded-lg bg-neutral-900 border border-gray-700 text-white disabled:opacity-50"
+                                            inputMode="numeric"
+                                            aria-label="OTP code"
+                                        />
+
+                                        <button
+                                            type="submit"
+                                            disabled={anyLoading}
+                                            aria-busy={state.loading.otp}
+                                            className={`w-full py-2.5 rounded-lg flex items-center justify-center ${anyLoading
+                                                ? "bg-orange-600/70 cursor-not-allowed"
+                                                : "bg-orange-600 hover:bg-orange-500"
+                                                } text-white`}
+                                        >
+                                            {state.loading.otp ? (
+                                                <div className="text-xs flex flex-row items-center gap-x-2">
+                                                    <Spinner />
+                                                    <span>Verifying…</span>
+                                                </div>
+                                            ) : (
+                                                "Verify & Continue"
+                                            )}
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+
+                            {/* ---- FOOTER ---- */}
+                            <div className="pt-4 border-t border-gray-700 space-y-3">
                                 <p className="text-sm text-gray-400 text-center">
-                                    Enter the code sent to {state.maskedEmail || state.oauthEmail}
+                                    Don&apos;t have an account?{" "}
+                                    <a
+                                        href="/register"
+                                        className="text-orange-400 hover:underline"
+                                    >
+                                        Sign up
+                                    </a>
                                 </p>
 
-                                <input
-                                    type="text"
-                                    placeholder="6-digit code"
-                                    value={state.otp}
-                                    onChange={(e) => dispatch({ type: "SET", key: "otp", value: e.target.value })}
-                                    maxLength={6}
-                                    disabled={anyLoading}
-                                    aria-disabled={anyLoading}
-                                    className="w-full px-4 py-2.5 text-center tracking-widest rounded-lg bg-neutral-900 border border-gray-700 text-white disabled:opacity-50"
-                                />
-
-                                <button
-                                    type="submit"
-                                    disabled={anyLoading}
-                                    aria-busy={state.loading.otp}
-                                    className={`w-full py-2.5 rounded-lg flex items-center justify-center ${anyLoading ? "bg-orange-600/70 cursor-not-allowed" : "bg-orange-600 hover:bg-orange-500"
-                                        } text-white disabled:opacity-50`}
-                                >
-                                    {state.loading.otp ? (
-                                        <>
-                                            <Spinner />
-                                            <span>Verifying…</span>
-                                        </>
-                                    ) : (
-                                        <span>Verify & Continue</span>
-                                    )}
-                                </button>
+                                <p className="text-sm text-gray-400 text-center">
+                                    Reset Form{" "}
+                                    <button
+                                        onClick={() =>
+                                            resetLoginState({
+                                                clearOAuth: true,
+                                            })
+                                        }
+                                        className="text-orange-400 hover:underline"
+                                    >
+                                        here
+                                    </button>
+                                </p>
                             </div>
-                        </form>
-                    )}
-
-                    <div className="pt-4 border-t border-gray-700 space-y-3">
-                        <p className="text-sm text-gray-400 text-center">
-                            Don&apos;t have an account?{" "}
-                            <a href="/register" className="text-orange-400 hover:underline">
-                                Sign up
-                            </a>
-                        </p>
-                        <p className="text-sm text-gray-400 text-center">
-                            Reset login credentials{" "}
-                            <button
-                                onClick={() => resetLoginState({ clearOAuth: true })}
-                                className="text-orange-400 hover:underline"
-                            >
-                                here
-                            </button>
-                        </p>
-                    </div>
-                </div>
+                        </div>
+                    </>
+                )}
             </div>
+
+            {/* OAuth needs-registration modal */}
             <Modal
                 isOpen={needsReg}
                 lock
@@ -521,14 +808,25 @@ function Login() {
                         Registering will create a new site account for <strong>{state.oauthEmail || "this email"}</strong> with OAuth login.
                     </p>
                     <p className="mb-2">
-                        If you wish, you can also register a password login from your account settings after registering, but it&apos;s not mandatory.
+                        You can add a password login later from account settings if you want - not mandatory.
                     </p>
                 </div>
             </Modal>
+
+            {/* Toast container (react-toastify) */}
+            <ToastContainer
+                position="top-center"
+                autoClose={4000}
+                hideProgressBar={false}
+                newestOnTop={false}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+            />
         </div>
     );
-
-    
 }
 
 export default Login;

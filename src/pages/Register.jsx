@@ -1,5 +1,5 @@
 // Register.jsx
-import { useEffect, useRef, useReducer, useCallback } from "react";
+import { useEffect, useRef, useReducer, useCallback, useState, useMemo } from "react";
 import Logo from "../features/Logo";
 import backendUrlV1 from "../urls/backendUrl";
 import { useUsernameAvailabilitySimple } from "../features/userNameAvailability";
@@ -9,77 +9,52 @@ import remarkGfm from "remark-gfm";
 import DOMPurify from "dompurify";
 import { Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useContextManager } from "../features/ContextProvider";
 
+/* --------------------------
+   Policy content renderer
+   -------------------------- */
 function PolicyContent({ markdown }) {
   const mdObj = markdown || {};
   const hasHtml = typeof mdObj.html === "string" && mdObj.html.length > 0;
   const hasMd = typeof mdObj.markdown === "string" && mdObj.markdown.length > 0;
   const contentMd = hasMd ? mdObj.markdown : hasHtml ? mdObj.html : "";
 
+  const baseClass =
+    "prose prose-invert max-w-none prose-p:leading-relaxed prose-li:my-1 prose-ul:pl-6 prose-ol:pl-6 prose-headings:text-orange-300 prose-a:text-orange-400 prose-a:underline prose-strong:text-white text-sm";
+
   if (hasHtml && !hasMd) {
-    const sanitized = DOMPurify.sanitize(mdObj.html, { ADD_TAGS: ["iframe"], ADD_ATTR: ["allow", "allowfullscreen", "frameborder", "scrolling"] });
-    return (
-      <div
-        className="
-          prose prose-invert max-w-none
-          prose-p:leading-relaxed
-          prose-li:my-1
-          prose-ul:pl-6
-          prose-ol:pl-6
-          prose-headings:text-orange-300
-          prose-a:text-orange-400
-          prose-a:underline
-          prose-strong:text-white
-          text-sm
-        "
-        dangerouslySetInnerHTML={{ __html: sanitized }}
-      />
-    );
+    const sanitized = DOMPurify.sanitize(mdObj.html, {
+      ADD_TAGS: ["iframe"],
+      ADD_ATTR: ["allow", "allowfullscreen", "frameborder", "scrolling"],
+    });
+    return <div className={baseClass} dangerouslySetInnerHTML={{ __html: sanitized }} />;
   }
+
   if (!contentMd) {
     return <div className="text-sm text-neutral-400">Click on "Read" to view the policy</div>;
   }
+
   return (
-    <div
-      className="
-        prose prose-invert max-w-none
-        prose-p:leading-relaxed
-        prose-li:my-1
-        prose-ul:pl-6
-        prose-ol:pl-6
-        prose-headings:text-orange-300
-        prose-a:text-orange-400
-        prose-a:underline
-        prose-strong:text-white
-        text-sm
-      "
-    >
+    <div className={baseClass}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-
           pre: ({ node, ...props }) => (
-
             <pre
               {...props}
               className="whitespace-pre rounded-md bg-neutral-900 p-3 overflow-auto text-xs"
               style={{ tabSize: 4 }}
             />
           ),
-
           code: ({ node, inline, className, children, ...props }) => {
             if (inline) {
-
               return (
-                <code
-                  {...props}
-                  className={`px-1 py-0.5 rounded text-sm bg-neutral-800 ${className || ""}`}
-                >
+                <code {...props} className={`px-1 py-0.5 rounded text-sm bg-neutral-800 ${className || ""}`}>
                   {children}
                 </code>
               );
             }
-
             return (
               <code
                 {...props}
@@ -90,7 +65,6 @@ function PolicyContent({ markdown }) {
               </code>
             );
           },
-
           p: ({ node, ...props }) => <p {...props} className="leading-relaxed" />,
           li: ({ node, ...props }) => <li {...props} className="my-1" />,
         }}
@@ -101,6 +75,9 @@ function PolicyContent({ markdown }) {
   );
 }
 
+/* --------------------------
+   Utilities
+   -------------------------- */
 function validatePassword(pwd) {
   if (pwd.length < 8) return "Password must be at least 8 characters.";
   if (pwd.length > 72) return "Password is too long.";
@@ -109,10 +86,13 @@ function validatePassword(pwd) {
   return null;
 }
 
+/* --------------------------
+   Constants & initialState
+   -------------------------- */
 const LEGAL_BASE = `/api/legal`;
 const REGISTER_BASE = `${backendUrlV1}/auth/registration`;
 const initialState = {
-  stage: "email",
+  stage: "email", // email | otp | consent | final | oauthfinal | activation_sent
   email: "",
   challengeId: "",
   otp: "",
@@ -132,7 +112,15 @@ const initialState = {
   emailUnacceptable: false,
   whyEmailUnacceptable: "",
   showEmailBlockedModal: false,
-  loading: false,
+  loading: {
+    requestOtp: false,
+    resendOtp: false,
+    verifyOtp: false,
+    policyMeta: false,
+    policyFile: false,
+    preRegisterConsent: false,
+    register: false,
+  },
   error: "",
 };
 
@@ -142,6 +130,8 @@ function reducer(state, action) {
       return { ...state, [action.key]: action.value };
     case "SET_MANY":
       return { ...state, ...action.payload };
+    case "SET_LOADING":
+      return { ...state, loading: { ...state.loading, ...action.payload } };
     case "RESET":
       return { ...initialState };
     default:
@@ -149,254 +139,448 @@ function reducer(state, action) {
   }
 }
 
+/* --------------------------
+   Register component
+   -------------------------- */
 export default function Register() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const cooldownRef = useRef(null);
+  const stateRef = useRef(state);
+  stateRef.current = state; // always point to latest state for timers
   const navigate = useNavigate();
-  // OAuth detection via flow_id in URL (server-owned flow)
-  const flowId = new URLSearchParams(window.location.search).get("flow_id");
+  const { setIsLoading } = useContextManager();
+
+  // OAuth detection via req_id in URL (server-owned flow)
+  const flowId = new URLSearchParams(window.location.search).get("req_id");
   const isOAuth = Boolean(new URLSearchParams(window.location.search).get("oauth") === "1") || Boolean(flowId);
 
-  // cooldown timer
+  // refs for lifecycle & abort controllers
+  const isMountedRef = useRef(true);
+  const otpRequestControllerRef = useRef(null);
+  const resendControllerRef = useRef(null);
+  const verifyControllerRef = useRef(null);
+  const policyMetaControllerRef = useRef(null);
+  const policyFileControllersRef = useRef({}); // map key -> controller
+  const registerControllerRef = useRef(null);
+  const cooldownTimerRef = useRef(null);
+  const handledFlowRef = useRef(false);
+
+  // derived loading boolean (used for global fullscreen loader)
+  const anyLoading = useMemo(() => {
+    const l = state.loading;
+    return (
+      l.requestOtp ||
+      l.resendOtp ||
+      l.verifyOtp ||
+      l.policyMeta ||
+      l.policyFile ||
+      l.preRegisterConsent ||
+      l.register
+    );
+  }, [state.loading]);
+
+  // sync global loader
   useEffect(() => {
-    if (state.resendCooldown <= 0) {
-      clearInterval(cooldownRef.current);
-      return;
+    setIsLoading(anyLoading);
+  }, [anyLoading, setIsLoading]);
+
+  // mount/unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      // abort any pending controllers
+      [otpRequestControllerRef, resendControllerRef, verifyControllerRef, policyMetaControllerRef, registerControllerRef].forEach(
+        (r) => {
+          try {
+            r.current?.abort?.();
+          } catch {}
+        }
+      );
+      // abort policy file controllers
+      Object.values(policyFileControllersRef.current || {}).forEach((c) => {
+        try {
+          c.abort();
+        } catch {}
+      });
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
+    };
+  }, []);
+
+  /* --------------------------------
+     Cooldown timer (stable, accurate)
+     -------------------------------- */
+  useEffect(() => {
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
     }
-    cooldownRef.current = setInterval(() => {
-      dispatch({ type: "SET", key: "resendCooldown", value: Math.max(0, state.resendCooldown - 1) });
-    }, 1000);
-    return () => clearInterval(cooldownRef.current);
+    if (state.resendCooldown > 0) {
+      cooldownTimerRef.current = setInterval(() => {
+        // read latest value from stateRef
+        const current = stateRef.current.resendCooldown || 0;
+        if (current <= 1) {
+          clearInterval(cooldownTimerRef.current);
+          cooldownTimerRef.current = null;
+          dispatch({ type: "SET", key: "resendCooldown", value: 0 });
+          return;
+        }
+        dispatch({ type: "SET", key: "resendCooldown", value: current - 1 });
+      }, 1000);
+    }
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+    };
   }, [state.resendCooldown]);
 
-  const passwordRules = {
-    length: state.password.length >= 8,
-    upper: /[A-Z]/.test(state.password),
-    lower: /[a-z]/.test(state.password),
-    number: /[0-9]/.test(state.password),
-    match: state.password && state.password === state.confirmPassword,
-  };
+  /* --------------------------------
+     Username availability hook
+     -------------------------------- */
+  const usernameStatus = useUsernameAvailabilitySimple(state.userName, Boolean(state.userName));
+  const isUsernameValid = !state.userName || usernameStatus === "available";
 
-  const isPasswordStrong = Object.values(passwordRules).every(Boolean);
-  const strengthScore = [passwordRules.length, passwordRules.upper, passwordRules.lower, passwordRules.number].filter(Boolean).length;
+  /* --------------------------------
+     Password strength helpers
+     -------------------------------- */
+  const passwordRules = useMemo(() => {
+    return {
+      length: state.password.length >= 8,
+      upper: /[A-Z]/.test(state.password),
+      lower: /[a-z]/.test(state.password),
+      number: /[0-9]/.test(state.password),
+      match: state.password && state.password === state.confirmPassword,
+    };
+  }, [state.password, state.confirmPassword]);
+
+  const isPasswordStrong = useMemo(() => Object.values(passwordRules).slice(0, 4).every(Boolean), [passwordRules]);
+  const strengthScore = useMemo(() => [passwordRules.length, passwordRules.upper, passwordRules.lower, passwordRules.number].filter(Boolean).length, [passwordRules]);
   const strengthPct = (strengthScore / 4) * 100;
 
-  async function handleRequestOtp(e) {
-    e?.preventDefault();
-    dispatch({ type: "SET", key: "error", value: "" });
-    if (!state.email) {
-      dispatch({ type: "SET", key: "error", value: "Enter an email" });
-      return;
-    }
-    dispatch({ type: "SET", key: "loading", value: true });
-    try {
-      const fingerprint = window.localStorage.getItem("device_fp") || null;
-      const payload = { email: state.email, fingerprint };
-      const res = await fetch(`${REGISTER_BASE}/request-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (body.status_code === 406) {
-          dispatch({ type: "SET", key: "whyEmailUnacceptable", value: body.message || "This email domain is not allowed." });
-          dispatch({ type: "SET", key: "emailUnacceptable", value: true });
-        }
-        throw new Error(body.detail || "Failed to request OTP");
-      }
-      dispatch({ type: "SET_MANY", payload: { challengeId: body.challenge_id, resendCooldown: body.resend_cooldown || 30, stage: "otp", whyEmailUnacceptable: "", emailUnacceptable: false } });
-    } catch (err) {
-      dispatch({ type: "SET", key: "error", value: err.message || String(err) });
-    } finally {
-      dispatch({ type: "SET", key: "loading", value: false });
-    }
+  /* --------------------------------
+     Helper: safe dispatch (avoid updates after unmount)
+     -------------------------------- */
+  function safeDispatch(action) {
+    if (isMountedRef.current) dispatch(action);
   }
 
-  async function handleResendOtp() {
+  /* --------------------------------
+     Request OTP
+     -------------------------------- */
+  const handleRequestOtp = useCallback(
+    async (e) => {
+      e?.preventDefault();
+      safeDispatch({ type: "SET", key: "error", value: "" });
+      if (!state.email) {
+        safeDispatch({ type: "SET", key: "error", value: "Enter an email" });
+        return;
+      }
+
+      // abort previous controller
+      try {
+        otpRequestControllerRef.current?.abort();
+      } catch {}
+      const ctrl = new AbortController();
+      otpRequestControllerRef.current = ctrl;
+
+      safeDispatch({ type: "SET_LOADING", payload: { requestOtp: true } });
+
+      try {
+        const fingerprint = window.localStorage.getItem("device_fp") || null;
+        const payload = { email: state.email, fingerprint };
+        const res = await fetch(`${REGISTER_BASE}/request-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: ctrl.signal,
+        });
+
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (body.status_code === 406) {
+            safeDispatch({ type: "SET", key: "whyEmailUnacceptable", value: body.message || "This email domain is not allowed." });
+            safeDispatch({ type: "SET", key: "emailUnacceptable", value: true });
+          }
+          throw new Error(body.message || "Failed to request OTP");
+        }
+
+        safeDispatch({
+          type: "SET_MANY",
+          payload: {
+            challengeId: body.challenge_id,
+            resendCooldown: body.resend_cooldown || 30,
+            stage: "otp",
+            whyEmailUnacceptable: "",
+            emailUnacceptable: false,
+          },
+        });
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          safeDispatch({ type: "SET", key: "error", value: err.message || String(err) });
+        }
+      } finally {
+        safeDispatch({ type: "SET_LOADING", payload: { requestOtp: false } });
+        otpRequestControllerRef.current = null;
+      }
+    },
+    [state.email]
+  );
+
+  /* --------------------------------
+     Resend OTP
+     -------------------------------- */
+  const handleResendOtp = useCallback(async () => {
     if (state.resendCooldown > 0) return;
-    dispatch({ type: "SET", key: "loading", value: true });
+
+    try {
+      resendControllerRef.current?.abort();
+    } catch {}
+    const ctrl = new AbortController();
+    resendControllerRef.current = ctrl;
+
+    safeDispatch({ type: "SET_LOADING", payload: { resendOtp: true } });
+    safeDispatch({ type: "SET", key: "otpError", value: "" });
+
     try {
       const res = await fetch(`${REGISTER_BASE}/resend-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: state.email, challenge_id: state.challengeId }),
+        signal: ctrl.signal,
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (body.status_code === 406) {
-          dispatch({ type: "SET", key: "whyEmailUnacceptable", value: body.message || "This email domain is not allowed." });
-          dispatch({ type: "SET", key: "emailUnacceptable", value: true });
+          safeDispatch({ type: "SET", key: "whyEmailUnacceptable", value: body.message || "This email domain is not allowed." });
+          safeDispatch({ type: "SET", key: "emailUnacceptable", value: true });
         }
         throw new Error(body.detail || "Failed to resend OTP");
       }
-      dispatch({ type: "SET", key: "resendCooldown", value: body.resend_cooldown || 30 });
+      safeDispatch({ type: "SET", key: "resendCooldown", value: body.resend_cooldown || 30 });
     } catch (err) {
-      dispatch({ type: "SET", key: "otpError", value: err.message || String(err) });
+      if (err?.name !== "AbortError") {
+        safeDispatch({ type: "SET", key: "otpError", value: err.message || String(err) });
+      }
     } finally {
-      dispatch({ type: "SET", key: "loading", value: false });
+      safeDispatch({ type: "SET_LOADING", payload: { resendOtp: false } });
+      resendControllerRef.current = null;
     }
-  }
+  }, [state.email, state.challengeId]);
 
-  async function handlePolicyStep() {
-    let metaBody = null;
-    try {
-      const metaRes = await fetch(`${LEGAL_BASE}/active?meta_only=1`, {
-        cache: "no-store",
-      });
+  /* --------------------------------
+     Verify OTP
+     -------------------------------- */
+  const handleVerifyOtp = useCallback(
+    async (e) => {
+      e?.preventDefault();
+      safeDispatch({ type: "SET", key: "otpError", value: "" });
 
-      metaBody = await metaRes.json().catch(() => null);
-      if (!metaRes.ok || !metaBody) {
-        const fallback = await fetch(`${LEGAL_BASE}/active`, {
-          cache: "no-store",
+      if (!state.otp || !state.challengeId) {
+        safeDispatch({ type: "SET", key: "otpError", value: "Enter the code" });
+        return;
+      }
+
+      try {
+        verifyControllerRef.current?.abort();
+      } catch {}
+      const ctrl = new AbortController();
+      verifyControllerRef.current = ctrl;
+
+      safeDispatch({ type: "SET_LOADING", payload: { verifyOtp: true } });
+
+      try {
+        const res = await fetch(`${REGISTER_BASE}/verify-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: state.email, challenge_id: state.challengeId, code: state.otp }),
+          signal: ctrl.signal,
         });
-
-        metaBody = await fallback.json().catch(() => null);
-        if (!fallback.ok) throw new Error("Failed to load policies (both meta and fallback failed)");
+        const resBody = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error((resBody && resBody.detail) || `OTP verification failed (status ${res.status})`);
+        }
+        safeDispatch({ type: "SET", key: "stage", value: "consent" });
+        await handlePolicyStep();
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          safeDispatch({ type: "SET", key: "otpError", value: err.message || String(err) });
+        }
+      } finally {
+        safeDispatch({ type: "SET_LOADING", payload: { verifyOtp: false } });
+        verifyControllerRef.current = null;
       }
-    } catch (err) {
-      console.warn("policy meta fetch error:", err);
-      throw err;
-    }
+    },
+    // note: handlePolicyStep declared later; include it via dependency array after declaration by ESLint rules - we'll wrap usage so the dependency list is accurate.
+    // we'll override lint with comment below when used.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.otp, state.challengeId, state.email]
+  );
 
-    let normals = [];
-    if (!metaBody) {
-      normals = [];
-    } else if (Array.isArray(metaBody)) {
-      normals = metaBody;
-    } else if (Array.isArray(metaBody.policies)) {
-      normals = metaBody.policies;
-    } else if (Array.isArray(metaBody.data)) {
-      normals = metaBody.data;
-    } else {
-      const arr = Object.values(metaBody).find((v) => Array.isArray(v));
-      normals = arr || [];
-    }
-    dispatch({ type: "SET_MANY", payload: { policiesMeta: normals, showConsentModal: true, stage: "consent" } });
-  }
-
-  async function handleVerifyOtp(e) {
-    e?.preventDefault();
-    dispatch({ type: "SET", key: "otpError", value: "" });
-    if (!state.otp || !state.challengeId) {
-      dispatch({ type: "SET", key: "otpError", value: "Enter the code" });
-      return;
-    }
-    dispatch({ type: "SET", key: "loading", value: true });
+  /* --------------------------------
+     Load policy metadata + show consent modal
+     -------------------------------- */
+  const handlePolicyStep = useCallback(async () => {
+    // abort previous meta controller
     try {
-      const res = await fetch(`${REGISTER_BASE}/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: state.email, challenge_id: state.challengeId, code: state.otp }),
-      });
-      const resBody = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error((resBody && resBody.detail) || `OTP verification failed (status ${res.status})`);
-      }
-      dispatch({ type: "SET", key: "stage", value: "consent" });
-      await handlePolicyStep();
-    } catch (err) {
-      dispatch({ type: "SET", key: "otpError", value: err.message || String(err) });
-    } finally {
-      dispatch({ type: "SET", key: "loading", value: false });
-    }
-  }
+      policyMetaControllerRef.current?.abort();
+    } catch {}
+    const ctrl = new AbortController();
+    policyMetaControllerRef.current = ctrl;
 
+    safeDispatch({ type: "SET_LOADING", payload: { policyMeta: true } });
+    try {
+      // primary try: meta_only=1 to get compact object
+      let metaRes = await fetch(`${LEGAL_BASE}/active?meta_only=1`, { cache: "no-store", signal: ctrl.signal });
+      let metaBody = await metaRes.json().catch(() => null);
+
+      if (!metaRes.ok || !metaBody) {
+        // fallback to full /active
+        metaRes = await fetch(`${LEGAL_BASE}/active`, { cache: "no-store", signal: ctrl.signal });
+        metaBody = await metaRes.json().catch(() => null);
+        if (!metaRes.ok) throw new Error("Failed to load policies (both meta and fallback failed)");
+      }
+
+      // normalize to array
+      let normals = [];
+      if (!metaBody) {
+        normals = [];
+      } else if (Array.isArray(metaBody)) {
+        normals = metaBody;
+      } else if (Array.isArray(metaBody.policies)) {
+        normals = metaBody.policies;
+      } else if (Array.isArray(metaBody.data)) {
+        normals = metaBody.data;
+      } else {
+        const arr = Object.values(metaBody).find((v) => Array.isArray(v));
+        normals = arr || [];
+      }
+
+      safeDispatch({ type: "SET_MANY", payload: { policiesMeta: normals, showConsentModal: true, stage: "consent" } });
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        safeDispatch({ type: "SET", key: "consentError", value: err.message || String(err) });
+        throw err; // rethrow so caller knows
+      }
+    } finally {
+      safeDispatch({ type: "SET_LOADING", payload: { policyMeta: false } });
+      policyMetaControllerRef.current = null;
+    }
+  }, []);
+
+  /* --------------------------------
+     Load full policy file (html or markdown)
+     - caches policyFileControllers
+     -------------------------------- */
   async function loadPolicyFull(key) {
-    // exact same logic as your original file (unchanged)
-    console.log(key);
     // toggle hide if already loaded
     if (state.policiesFull[key]) {
       const copy = { ...state.policiesFull };
       delete copy[key];
-      dispatch({ type: "SET", key: "policiesFull", value: copy });
+      safeDispatch({ type: "SET", key: "policiesFull", value: copy });
       return;
     }
 
     const meta = state.policiesMeta.find((p) => p.key === key || p.id === key || p.slug === key);
-    if (!meta) {
 
-      console.warn("Policy meta not found for key:", key, "— falling back to API endpoints.");
-      try {
-        dispatch({ type: "SET", key: "policyLoadingKey", value: key });
-        const tryUrls = [
+    // small helper to try multiple endpoints (fallback)
+    async function tryUrls(urls) {
+      let body = null;
+      for (const url of urls) {
+        try {
+          const res = await fetch(url);
+          body = await res.json().catch(() => null);
+          if (res.ok && body) return { body, ok: true, res };
+        } catch (err) {
+          // continue
+        }
+      }
+      return { body: null, ok: false };
+    }
+
+    safeDispatch({ type: "SET", key: "policyLoadingKey", value: key });
+    safeDispatch({ type: "SET_LOADING", payload: { policyFile: true } });
+
+    try {
+      if (!meta) {
+        // try a few endpoints
+        const tryUrlsList = [
           `${LEGAL_BASE}/${encodeURIComponent(key)}/versions`,
           `${LEGAL_BASE}/${encodeURIComponent(key)}`,
           `${LEGAL_BASE}/${encodeURIComponent(key)}/latest`,
         ];
-        console.log("Trying policy URLs:", tryUrls);
+        const attempt = await tryUrls(tryUrlsList);
+        if (!attempt.ok || !attempt.body) throw new Error("Failed to load policy (all endpoints failed)");
 
-        let body = null;
-        let ok = false;
-        for (const url of tryUrls) {
-          try {
-            const res = await fetch(url);
-            body = await res.json().catch(() => null);
-            console.log("policy fetch", url, res.status, body);
-            if (res.ok && body) {
-              ok = true;
-              break;
-            }
-          } catch (err) {
-            console.warn("policy fetch error for", url, err);
-          }
-        }
-
-        if (!ok || !body) throw new Error("Failed to load policy (all endpoints failed)");
-
+        const body = attempt.body;
         if (Array.isArray(body.versions) && body.versions.length) {
-          dispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: body.versions[0] } });
+          safeDispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: body.versions[0] } });
           return;
         }
         if (Array.isArray(body) && body.length) {
-          dispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: body[0] } });
+          safeDispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: body[0] } });
           return;
         }
-        dispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: body } });
+        safeDispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: body } });
         return;
-      } catch (err) {
-        dispatch({ type: "SET", key: "consentError", value: err.message || String(err) });
-        dispatch({ type: "SET", key: "policyLoadingKey", value: null });
-        return;
-      } finally {
-        dispatch({ type: "SET", key: "policyLoadingKey", value: null });
       }
-    }
 
-    if (!meta.file_url) {
-      dispatch({ type: "SET", key: "consentError", value: "Policy metadata missing file_url" });
-      return;
-    }
+      if (!meta.file_url) {
+        safeDispatch({ type: "SET", key: "consentError", value: "Policy metadata missing file_url" });
+        return;
+      }
 
-    const fileUrlAbsolute = ((fileUrl) => {
-      if (!fileUrl) return null;
-      if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
-      return fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`;
-    })(meta.file_url);
+      const fileUrlAbsolute = ((fileUrl) => {
+        if (!fileUrl) return null;
+        if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+        return fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`;
+      })(meta.file_url);
 
-    dispatch({ type: "SET", key: "policyLoadingKey", value: key });
-    try {
-      const res = await fetch(fileUrlAbsolute);
+      // abort previous controller for this key
+      try {
+        policyFileControllersRef.current[key]?.abort();
+      } catch {}
+      const ctrl = new AbortController();
+      policyFileControllersRef.current[key] = ctrl;
+
+      const res = await fetch(fileUrlAbsolute, { signal: ctrl.signal });
       if (!res.ok) {
         throw new Error(`Failed to fetch policy file: ${res.status}`);
       }
       const text = await res.text();
       const fmt = (meta.file_format || meta.format || "markdown").toLowerCase();
       if (fmt === "html") {
-        dispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: { html: text, text_hash: meta.text_hash, file_url: meta.file_url, file_format: fmt } } });
+        safeDispatch({
+          type: "SET",
+          key: "policiesFull",
+          value: { ...state.policiesFull, [key]: { html: text, text_hash: meta.text_hash, file_url: meta.file_url, file_format: fmt } },
+        });
       } else {
-        dispatch({ type: "SET", key: "policiesFull", value: { ...state.policiesFull, [key]: { markdown: text, text_hash: meta.text_hash, file_url: meta.file_url, file_format: fmt } } });
+        safeDispatch({
+          type: "SET",
+          key: "policiesFull",
+          value: { ...state.policiesFull, [key]: { markdown: text, text_hash: meta.text_hash, file_url: meta.file_url, file_format: fmt } },
+        });
       }
     } catch (err) {
-      dispatch({ type: "SET", key: "consentError", value: err.message || String(err) });
+      if (err?.name !== "AbortError") {
+        safeDispatch({ type: "SET", key: "consentError", value: err.message || String(err) });
+      }
     } finally {
-      dispatch({ type: "SET", key: "policyLoadingKey", value: null });
+      safeDispatch({ type: "SET", key: "policyLoadingKey", value: null });
+      safeDispatch({ type: "SET_LOADING", payload: { policyFile: false } });
+      delete policyFileControllersRef.current[key];
     }
   }
 
-  async function handlePreRegisterConsent() {
-    dispatch({ type: "SET", key: "consentError", value: "" });
-    dispatch({ type: "SET", key: "consentLoading", value: true });
+  /* --------------------------------
+     Consent pre-register
+     -------------------------------- */
+  const handlePreRegisterConsent = useCallback(async () => {
+    safeDispatch({ type: "SET", key: "consentError", value: "" });
+    safeDispatch({ type: "SET_LOADING", payload: { preRegisterConsent: true } });
+
     try {
       if (!state.challengeId) throw new Error("Missing registration challenge id");
       const agreements = state.policiesMeta.map((p) => ({
@@ -421,21 +605,35 @@ export default function Register() {
         throw new Error(body.detail || "Failed to record consent");
       }
 
-      dispatch({ type: "SET", key: "showConsentModal", value: false });
+      safeDispatch({ type: "SET", key: "showConsentModal", value: false });
       if (isOAuth) {
         await performRegistration();
       } else {
-        dispatch({ type: "SET", key: "stage", value: "final" });
+        safeDispatch({ type: "SET", key: "stage", value: "final" });
       }
     } catch (err) {
-      dispatch({ type: "SET", key: "consentError", value: err.message || String(err) });
+      if (err?.name !== "AbortError") {
+        safeDispatch({ type: "SET", key: "consentError", value: err.message || String(err) });
+      }
     } finally {
-      dispatch({ type: "SET", key: "consentLoading", value: false });
+      safeDispatch({ type: "SET_LOADING", payload: { preRegisterConsent: false } });
     }
-  }
+  }, [isOAuth, state.challengeId, state.policiesMeta]);
 
+  /* --------------------------------
+     Perform registration (normal or OAuth flow)
+     - abortable
+     -------------------------------- */
   async function performRegistration() {
-    dispatch({ type: "SET", key: "loading", value: true });
+    try {
+      registerControllerRef.current?.abort();
+    } catch {}
+    const ctrl = new AbortController();
+    registerControllerRef.current = ctrl;
+
+    safeDispatch({ type: "SET_LOADING", payload: { register: true } });
+    safeDispatch({ type: "SET", key: "error", value: "" });
+
     try {
       const consents = state.policiesMeta.map((p) => ({
         agreement_key: p.key,
@@ -444,12 +642,10 @@ export default function Register() {
       }));
 
       let res;
-
       if (isOAuth && flowId) {
-        dispatch({ type: "SET", key: "stage", value: "oauthfinal" });
+        safeDispatch({ type: "SET", key: "stage", value: "oauthfinal" });
 
-        // Call backend flow-aware registration endpoint. Backend will use server side flow keyed by flowId.
-        res = await fetch(`${backendUrlV1}/auth/oauth/registration/register_with_flow`, {
+        res = await fetch(`${backendUrlV1}/auth/oauth/registration/register`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -461,8 +657,9 @@ export default function Register() {
             consents,
             age_verified: true,
             age_verification_method: "self_asserted",
-            flow_id: flowId,
+            req_id: flowId,
           }),
+          signal: ctrl.signal,
         });
       } else {
         res = await fetch(`${REGISTER_BASE}/register`, {
@@ -478,50 +675,63 @@ export default function Register() {
             age_verified: true,
             age_verification_method: "self_asserted",
           }),
+          signal: ctrl.signal,
         });
       }
 
       const body = await res.json().catch(() => ({}));
-
       if (!res.ok) {
         throw new Error(body.detail || "Registration failed");
       }
 
       if (body.activation_required) {
-        dispatch({ type: "SET", key: "stage", value: "activation_sent" });
+        safeDispatch({ type: "SET", key: "stage", value: "activation_sent" });
       } else {
         navigate("/login?registered=1");
       }
     } catch (err) {
-      dispatch({ type: "SET", key: "error", value: err.message || String(err) });
+      if (err?.name !== "AbortError") {
+        safeDispatch({ type: "SET", key: "error", value: err.message || String(err) });
+      }
     } finally {
-      dispatch({ type: "SET", key: "loading", value: false });
+      safeDispatch({ type: "SET_LOADING", payload: { register: false } });
+      registerControllerRef.current = null;
     }
   }
 
-  async function handleRegister(e) {
-    e?.preventDefault();
+  /* --------------------------------
+     Register handler (final step)
+     -------------------------------- */
+  const handleRegister = useCallback(
+    async (e) => {
+      e?.preventDefault();
 
-    if (!isOAuth) {
-      const pwdErr = validatePassword(state.password);
-      if (pwdErr) {
-        dispatch({ type: "SET", key: "error", value: pwdErr });
-        return;
+      if (!isOAuth) {
+        const pwdErr = validatePassword(state.password);
+        if (pwdErr) {
+          safeDispatch({ type: "SET", key: "error", value: pwdErr });
+          return;
+        }
+        if (state.password !== state.confirmPassword) {
+          safeDispatch({ type: "SET", key: "error", value: "Passwords do not match." });
+          return;
+        }
+        if (!isUsernameValid) {
+          safeDispatch({ type: "SET", key: "error", value: "Choose a different username." });
+          return;
+        }
       }
-      if (state.password !== state.confirmPassword) {
-        dispatch({ type: "SET", key: "error", value: "Passwords do not match." });
-        return;
-      }
-    }
 
-    await performRegistration();
-  }
+      await performRegistration();
+    },
+    [isOAuth, state.password, state.confirmPassword, isUsernameValid, state.userName]
+  );
 
-  const usernameStatus = useUsernameAvailabilitySimple(state.userName, Boolean(state.userName));
-  const isUsernameValid = !state.userName || usernameStatus === "available";
-
-  const handledFlowRef = useRef(false);
-
+  /* --------------------------------
+     Unified req_id handling (single effect)
+     - read challenge and email from server flow store
+     - then open consent step
+     -------------------------------- */
   useEffect(() => {
     if (!flowId || handledFlowRef.current) return;
     handledFlowRef.current = true;
@@ -531,38 +741,6 @@ export default function Register() {
         const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(flowId)}`, {
           credentials: "include",
         });
-
-        if (!res.ok) {
-          navigate("/register");
-          return;
-        }
-
-        const body = await res.json().catch(() => null);
-        if (!body) {
-          navigate("/register");
-          return;
-        }
-
-        if (body.email) dispatch({ type: "SET", key: "email", value: body.email });
-        if (body.challenge_id) dispatch({ type: "SET", key: "challengeId", value: body.challenge_id });
-
-        dispatch({ type: "SET", key: "stage", value: "consent" });
-        await handlePolicyStep();
-      } catch {
-        navigate("/register");
-      }
-    })();
-  }, []);
-
-  // If flow_id present, populate email/challenge from backend flow store and go to consent
-  useEffect(() => {
-    if (!flowId) return;
-
-    (async () => {
-      try {
-        const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(flowId)}`, {
-          credentials: "include",
-        });
         if (!res.ok) {
           navigate("/register");
           return;
@@ -572,10 +750,11 @@ export default function Register() {
           navigate("/register");
           return;
         }
-        if (body.email) dispatch({ type: "SET", key: "email", value: body.email });
-        if (body.challenge_id) dispatch({ type: "SET", key: "challengeId", value: body.challenge_id });
-        // Move to consent stage
-        dispatch({ type: "SET", key: "stage", value: "consent" });
+
+        if (body.email) safeDispatch({ type: "SET", key: "email", value: body.email });
+        if (body.challenge_id) safeDispatch({ type: "SET", key: "challengeId", value: body.challenge_id });
+
+        safeDispatch({ type: "SET", key: "stage", value: "consent" });
         await handlePolicyStep();
       } catch (err) {
         navigate("/register");
@@ -584,6 +763,9 @@ export default function Register() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowId, navigate]);
 
+  /* --------------------------------
+     Render
+     -------------------------------- */
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="w-full sm:max-w-md max-w-[88%] rounded-2xl bg-white/5 backdrop-blur border border-white/10 shadow-xl p-8">
@@ -600,7 +782,11 @@ export default function Register() {
               <div className="mt-2 text-sm text-red-400 text-center space-y-1">
                 <div>This email can't be used. Please try another address.</div>
 
-                <button type="button" onClick={() => dispatch({ type: "SET", key: "showEmailBlockedModal", value: true })} className="inline-flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 underline underline-offset-2 transition">
+                <button
+                  type="button"
+                  onClick={() => safeDispatch({ type: "SET", key: "showEmailBlockedModal", value: true })}
+                  className="inline-flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 underline underline-offset-2 transition"
+                >
                   Why is this blocked?
                   <Info className="w-3.5 h-3.5" />
                 </button>
@@ -608,10 +794,25 @@ export default function Register() {
             )}
 
             {state.stage === "email" && (
-              <form onSubmit={handleRequestOtp} className="space-y-4 mt-6">
-                <input type="email" placeholder="Email" value={state.email} onChange={e => dispatch({ type: "SET", key: "email", value: e.target.value })} required className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500" />
-                <button type="submit" disabled={state.loading} className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition disabled:opacity-50">
-                  {state.loading ? "Requesting…" : "Request OTP"}
+              <form onSubmit={handleRequestOtp} className="space-y-4 mt-6" autoComplete="on">
+                <label htmlFor="register-email" className="sr-only">Email</label>
+                <input
+                  id="register-email"
+                  type="email"
+                  name="email"
+                  autoComplete="email"
+                  placeholder="Email"
+                  value={state.email}
+                  onChange={(e) => safeDispatch({ type: "SET", key: "email", value: e.target.value })}
+                  required
+                  className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500"
+                />
+                <button
+                  type="submit"
+                  disabled={state.loading.requestOtp}
+                  className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition disabled:opacity-50"
+                >
+                  {state.loading.requestOtp ? "Requesting…" : "Request OTP"}
                 </button>
                 <div className="mt-6 text-sm text-center text-gray-400">
                   Already have an account? <a href="/login" className="text-orange-400 hover:underline">Log in</a>
@@ -623,25 +824,58 @@ export default function Register() {
               <form onSubmit={handleVerifyOtp} className="space-y-4 mt-6">
                 <div className="text-sm text-gray-300 text-center">We sent a code to <strong>{state.email}</strong></div>
 
-                <input type="text" placeholder="Enter 6-digit code" value={state.otp} onChange={e => dispatch({ type: "SET", key: "otp", value: e.target.value.replace(/\D/g, "").slice(0, 6) })} required className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500" />
+                <label htmlFor="otp" className="sr-only">OTP</label>
+                <input
+                  id="otp"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Enter 6-digit code"
+                  value={state.otp}
+                  onChange={(e) =>
+                    safeDispatch({ type: "SET", key: "otp", value: e.target.value.replace(/\D/g, "").slice(0, 6) })
+                  }
+                  required
+                  className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500"
+                />
                 {state.otpError && <div className="text-sm text-red-400 text-center">{state.otpError}</div>}
 
                 <div className="flex gap-2">
-                  <button type="submit" disabled={state.loading} className="flex-1 py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition disabled:opacity-50">Verify</button>
-                  <button type="button" onClick={handleResendOtp} disabled={state.resendCooldown > 0 || state.loading} className="px-4 py-2.5 rounded-lg bg-neutral-800 border border-gray-700 text-white text-sm disabled:opacity-50">
-                    {state.resendCooldown > 0 ? `Resend (${state.resendCooldown}s)` : "Resend"}
+                  <button
+                    type="submit"
+                    disabled={state.loading.verifyOtp}
+                    className="flex-1 py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition disabled:opacity-50"
+                  >
+                    {state.loading.verifyOtp ? "Verifying…" : "Verify"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={state.resendCooldown > 0 || state.loading.resendOtp}
+                    className="px-4 py-2.5 rounded-lg bg-neutral-800 border border-gray-700 text-white text-sm disabled:opacity-50"
+                  >
+                    {state.resendCooldown > 0 ? `Resend (${state.resendCooldown}s)` : (state.loading.resendOtp ? "Resending…" : "Resend")}
                   </button>
                 </div>
-                <div className="mt-6 text-sm text-center text-gray-400">Didn't get a code? Wait 30s between resends. Too many bad attempts may block the email.</div>
+                <div className="mt-6 text-sm text-center text-gray-400">Didn't get a code? Wait between resends. Too many bad attempts may block the email.</div>
               </form>
             )}
 
             {state.stage === "final" && (
-              <form onSubmit={handleRegister} className="space-y-4 mt-6">
+              <form onSubmit={handleRegister} className="space-y-4 mt-6" autoComplete="on">
                 <div className="text-sm text-green-300 text-center">Email verified – finish set up</div>
 
                 <div>
-                  <input type="text" placeholder="Username (optional)" value={state.userName} onChange={e => dispatch({ type: "SET", key: "userName", value: e.target.value })} className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500" />
+                  <label htmlFor="username" className="sr-only">Username</label>
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    autoComplete="username"
+                    placeholder="Username (optional)"
+                    value={state.userName}
+                    onChange={(e) => safeDispatch({ type: "SET", key: "userName", value: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-lg bg-neutral-900 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500"
+                  />
                   <div className="mt-1 h-4 text-xs">
                     {!state.userName && <span className="text-neutral-500">Leave empty to get an auto-generated username</span>}
                     {state.userName && usernameStatus === "checking" && <span className="text-neutral-400">Checking availability…</span>}
@@ -652,15 +886,44 @@ export default function Register() {
                 </div>
 
                 <div className="relative">
-                  <input type={state.showPassword ? "text" : "password"} placeholder="Password" value={state.password} onChange={e => dispatch({ type: "SET", key: "password", value: e.target.value })} required className={`w-full px-4 py-2.5 pr-10 rounded-lg bg-neutral-900 border ${state.password ? (isPasswordStrong ? "border-green-500" : "border-red-500") : "border-gray-700"} text-white placeholder-gray-500 focus:outline-none`} />
-                  <button type="button" onClick={() => dispatch({ type: "SET", key: "showPassword", value: !state.showPassword })} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  <label htmlFor="password" className="sr-only">Password</label>
+                  <input
+                    id="password"
+                    name="password"
+                    type={state.showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    placeholder="Password"
+                    value={state.password}
+                    onChange={(e) => safeDispatch({ type: "SET", key: "password", value: e.target.value })}
+                    required
+                    className={`w-full px-4 py-2.5 pr-10 rounded-lg bg-neutral-900 border ${state.password ? (isPasswordStrong ? "border-green-500" : "border-red-500") : "border-gray-700"} text-white placeholder-gray-500 focus:outline-none`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => safeDispatch({ type: "SET", key: "showPassword", value: !state.showPassword })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"
+                  >
                     {state.showPassword ? "Hide" : "Show"}
                   </button>
                 </div>
 
                 <div className="relative">
-                  <input type={state.showConfirmPassword ? "text" : "password"} placeholder="Confirm password" value={state.confirmPassword} onChange={e => dispatch({ type: "SET", key: "confirmPassword", value: e.target.value })} required className={`w-full px-4 py-2.5 pr-10 rounded-lg bg-neutral-900 border ${state.confirmPassword ? (passwordRules.match ? "border-green-500" : "border-red-500") : "border-gray-700"} text-white placeholder-gray-500 focus:outline-none`} />
-                  <button type="button" onClick={() => dispatch({ type: "SET", key: "showConfirmPassword", value: !state.showConfirmPassword })} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  <label htmlFor="confirm-password" className="sr-only">Confirm password</label>
+                  <input
+                    id="confirm-password"
+                    name="confirm-password"
+                    type={state.showConfirmPassword ? "text" : "password"}
+                    placeholder="Confirm password"
+                    value={state.confirmPassword}
+                    onChange={(e) => safeDispatch({ type: "SET", key: "confirmPassword", value: e.target.value })}
+                    required
+                    className={`w-full px-4 py-2.5 pr-10 rounded-lg bg-neutral-900 border ${state.confirmPassword ? (passwordRules.match ? "border-green-500" : "border-red-500") : "border-gray-700"} text-white placeholder-gray-500 focus:outline-none`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => safeDispatch({ type: "SET", key: "showConfirmPassword", value: !state.showConfirmPassword })}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"
+                  >
                     {state.showConfirmPassword ? "Hide" : "Show"}
                   </button>
                 </div>
@@ -673,21 +936,40 @@ export default function Register() {
                 <div className="flex items-center flex-col text-xs space-y-1 mt-2">
                   <div className="flex w-full justify-between gap-2">
                     <div>
-                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.length ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}><span className="w-4 text-center">{passwordRules.length ? "✓" : "•"}</span><span>At least 8 characters</span></div>
-                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.upper ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}><span className="w-4 text-center">{passwordRules.upper ? "✓" : "•"}</span><span>One uppercase letter</span></div>
+                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.length ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}>
+                        <span className="w-4 text-center">{passwordRules.length ? "✓" : "•"}</span>
+                        <span>At least 8 characters</span>
+                      </div>
+                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.upper ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}>
+                        <span className="w-4 text-center">{passwordRules.upper ? "✓" : "•"}</span>
+                        <span>One uppercase letter</span>
+                      </div>
                     </div>
                     <div>
-                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.lower ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}><span className="w-4 text-center">{passwordRules.lower ? "✓" : "•"}</span><span>One lowercase letter</span></div>
-                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.number ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}><span className="w-4 text-center">{passwordRules.number ? "✓" : "•"}</span><span>One number</span></div>
+                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.lower ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}>
+                        <span className="w-4 text-center">{passwordRules.lower ? "✓" : "•"}</span>
+                        <span>One lowercase letter</span>
+                      </div>
+                      <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.number ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}>
+                        <span className="w-4 text-center">{passwordRules.number ? "✓" : "•"}</span>
+                        <span>One number</span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex w-full items-center">
-                    <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.match ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}><span className="w-4 text-center">{passwordRules.match ? "✓" : "•"}</span><span>Passwords match</span></div>
+                    <div className={`flex items-center gap-2 transition-all duration-200 ${state.password ? (passwordRules.match ? "text-green-400 scale-[1.02]" : "text-red-400 scale-[1.02]") : "text-neutral-500"}`}>
+                      <span className="w-4 text-center">{passwordRules.match ? "✓" : "•"}</span>
+                      <span>Passwords match</span>
+                    </div>
                   </div>
                 </div>
 
-                <button type="submit" disabled={state.loading || !isUsernameValid || !isPasswordStrong} className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition disabled:opacity-50">
-                  {state.loading ? "Creating account…" : "Create account"}
+                <button
+                  type="submit"
+                  disabled={state.loading.register || !isUsernameValid || !isPasswordStrong}
+                  className="w-full py-2.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition disabled:opacity-50"
+                >
+                  {state.loading.register ? "Creating account…" : "Create account"}
                 </button>
               </form>
             )}
@@ -721,7 +1003,8 @@ export default function Register() {
         )}
       </div>
 
-      <Modal isOpen={state.showEmailBlockedModal} onClose={() => dispatch({ type: "SET", key: "showEmailBlockedModal", value: false })} title="This email address can't be used" type="warning">
+      {/* Email blocked modal */}
+      <Modal isOpen={state.showEmailBlockedModal} onClose={() => safeDispatch({ type: "SET", key: "showEmailBlockedModal", value: false })} title="This email address can't be used" type="warning">
         <div className="space-y-4 text-sm text-neutral-300 leading-relaxed">
           <p>{state.whyEmailUnacceptable || "We couldn't use this email address to create an account."}</p>
 
@@ -743,13 +1026,14 @@ export default function Register() {
             </ul>
           </div>
 
-          <button onClick={() => dispatch({ type: "SET", key: "showEmailBlockedModal", value: false })} className="w-full pt-2.5 pb-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition">Got it, I'll try another email</button>
+          <button onClick={() => safeDispatch({ type: "SET", key: "showEmailBlockedModal", value: false })} className="w-full pt-2.5 pb-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-medium transition">Got it, I'll try another email</button>
         </div>
       </Modal>
 
+      {/* Consent modal */}
       <Modal
         isOpen={state.showConsentModal}
-        onClose={() => { dispatch({ type: "SET", key: "showConsentModal", value: false }); dispatch({ type: "SET", key: "stage", value: "consent" }); }}
+        onClose={() => { safeDispatch({ type: "SET", key: "showConsentModal", value: false }); safeDispatch({ type: "SET", key: "stage", value: "consent" }); }}
         title="Before you continue"
         mode="consent"
         type="consent"
@@ -757,7 +1041,7 @@ export default function Register() {
         requireScroll
         consents={state.policiesMeta.map(p => ({ id: p.key || p.id || p.slug, label: `${p.title || p.name || p.display_name || p.key} ${p.version ? `(${p.version})` : ""}`, required: true }))}
         onAgree={handlePreRegisterConsent}
-        onDisagree={() => dispatch({ type: "SET", key: "consentError", value: "You must accept all policies." })}
+        onDisagree={() => safeDispatch({ type: "SET", key: "consentError", value: "You must accept all policies." })}
         lock={false}
       >
         <div className="space-y-4">

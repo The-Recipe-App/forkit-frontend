@@ -123,7 +123,7 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
       <main className="max-w-[100vw] mx-auto space-y-12">
         {/* HERO WORKBENCH */}
         <section className="max-w-[100vw] grid gap-6 lg:grid-cols-2 items-start">
-          <div className="pt-2">
+          <div className="pt-2 max-w-[100vw]">
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight">
               Recipes as craft.
               <br />
@@ -131,7 +131,7 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
             </h1>
 
             <p className="mt-4 text-neutral-400 max-w-xl">
-              Forkit is a small workshop for recipes — each fork is a crafted tweak.
+              Forkit is a small workshop for recipes - each fork is a crafted tweak.
               Change one thing, test it, and the kitchen decides what works.
             </p>
 
@@ -167,43 +167,7 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
               <Stat label="Document" sub="Why it changed" icon={<Sparkles size={14} />} />
               <Stat label="Measure" sub="Time, texture, taste" icon={<Clock size={14} />} />
             </div>
-
-            {/* Search + tags (new) */}
-            <div className="mt-6">
-              <SearchBar query={query} setQuery={setQuery} />
-              <div className="mt-3 flex flex-wrap gap-2 items-center">
-                <div className="text-xs text-neutral-400 mr-2">Filter</div>
-                <div className="flex gap-2 flex-wrap">
-                  {TAGS.map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setActiveTag(t)}
-                      className={`text-sm py-1 px-3 rounded-full border transition-all focus:outline-none focus-visible:ring-2 ${
-                        activeTag === t
-                          ? "bg-amber-400 text-black border-amber-400"
-                          : "bg-neutral-900 text-neutral-300 border-neutral-700 hover:border-neutral-500"
-                      }`}
-                      aria-pressed={activeTag === t}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Animated workbench visual */}
-          <div className="relative w-full py-2">
-            <WorkbenchVisual cards={filteredCards} loading={loading} />
-          </div>
-        </section>
-
-        {/* WHAT HAPPENS */}
-        <section className="max-w-[100vw] grid gap-6 md:grid-cols-3">
-          <SimpleTile icon={<Wrench size={20} />} title="Fork the recipe" caption="Make a copy, change one thing." />
-          <SimpleTile icon={<Sparkles size={20} />} title="Test & record" caption="Note results and metrics." />
-          <SimpleTile icon={<TrendingUp size={20} />} title="Share & surface" caption="Good forks get noticed." />
+          </div>  
         </section>
 
         {/* LIVE (horizontal scroll on small, grid on desktop) */}
@@ -214,6 +178,13 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
           </div>
         </section>
 
+        {/* WHAT HAPPENS */}
+        <section className="max-w-[100vw] grid gap-6 md:grid-cols-3">
+          <SimpleTile icon={<Wrench size={20} />} title="Fork the recipe" caption="Make a copy, change one thing." />
+          <SimpleTile icon={<Sparkles size={20} />} title="Test & record" caption="Note results and metrics." />
+          <SimpleTile icon={<TrendingUp size={20} />} title="Share & surface" caption="Good forks get noticed." />
+        </section>
+
         {/* PRINCIPLES */}
         <section className="max-w-[100vw] bg-[#0b0b0b] border border-white/5 p-6 rounded-xl">
           <h3 className="text-lg font-semibold">Workshop principles</h3>
@@ -222,7 +193,7 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
           </p>
 
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <Principle title="One change" desc="Avoid big rewrites — small reproducible changes win." />
+            <Principle title="One change" desc="Avoid big rewrites - small reproducible changes win." />
             <Principle title="Why it matters" desc="Write a short note with the how & why." />
             <Principle title="Respect lineage" desc="Keep attribution and history intact." />
           </div>
@@ -232,7 +203,7 @@ export default function HomeWorkshop({ fetcher = defaultFetcher }) {
         <section className="max-w-[100vw] flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h2 className="text-2xl font-semibold">Ready to experiment?</h2>
-            <p className="text-neutral-400 mt-2">Fork one recipe, change one thing, test it — see what works.</p>
+            <p className="text-neutral-400 mt-2">Fork one recipe, change one thing, test it - see what works.</p>
           </div>
 
           <div className="flex gap-3">
@@ -260,7 +231,7 @@ function WorkbenchVisual({ cards, loading }) {
         className="bg-gradient-to-b from-neutral-900/60 to-neutral-900/0 border border-white/5 rounded-xl p-5"
       >
         <div className="flex items-start gap-4 overflow-x-auto no-scrollbar py-4 px-1">
-          <div className="flex gap-4 items-start">
+          <div className="flex gap-4 items-start max-w-[55vw]">
             {loading ? (
               // simple skeleton while loading
               <div className="flex gap-4">
@@ -368,55 +339,19 @@ function LiveWorkbench({ live, loading, onOpen }) {
         <div className="flex gap-4 py-2">
           {loading
             ? Array.from({ length: 3 }).map((_, i) => (
-                <article key={i} className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0">
-                  <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md animate-pulse bg-neutral-800" />
-                  <div className="mt-3">
-                    <div className="h-4 w-3/4 bg-neutral-800 rounded mb-2 animate-pulse" />
-                    <div className="h-3 w-1/4 bg-neutral-800 rounded animate-pulse" />
-                  </div>
-                </article>
-              ))
-            : list.map((r) => (
-                <motion.article
-                  key={r.id}
-                  whileHover={{ y: -6 }}
-                  className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0"
-                  onClick={() => onOpen(r.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") onOpen(r.id);
-                  }}
-                >
-                  <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md">
-                    <LazyImage src={r.img} alt={r.title} aspectClass="h-[36vw] sm:h-40 md:h-36" />
-                  </div>
-                  <div className="mt-3">
-                    <div className="text-sm font-medium text-white">{r.title}</div>
-                    <div className="text-xs text-neutral-400 mt-1">• active now</div>
-                  </div>
-                </motion.article>
-              ))}
-        </div>
-      </div>
-
-      {/* md+ screens: grid */}
-      <div className="hidden md:grid md:grid-cols-3 gap-4">
-        {loading
-          ? Array.from({ length: 3 }).map((_, i) => (
-              <article key={i} className="bg-[#0b0b0b] border border-white/5 rounded-lg p-3">
-                <div className="h-48 overflow-hidden rounded-md animate-pulse bg-neutral-800" />
+              <article key={i} className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0">
+                <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md animate-pulse bg-neutral-800" />
                 <div className="mt-3">
                   <div className="h-4 w-3/4 bg-neutral-800 rounded mb-2 animate-pulse" />
                   <div className="h-3 w-1/4 bg-neutral-800 rounded animate-pulse" />
                 </div>
               </article>
             ))
-          : list.map((r) => (
+            : list.map((r) => (
               <motion.article
                 key={r.id}
                 whileHover={{ y: -6 }}
-                className="bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer"
+                className="min-w-[72vw] sm:w-[260px] md:w-[220px] bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer flex-shrink-0"
                 onClick={() => onOpen(r.id)}
                 role="button"
                 tabIndex={0}
@@ -424,8 +359,8 @@ function LiveWorkbench({ live, loading, onOpen }) {
                   if (e.key === "Enter" || e.key === " ") onOpen(r.id);
                 }}
               >
-                <div className="h-48 overflow-hidden rounded-md">
-                  <LazyImage src={r.img} alt={r.title} aspectClass="h-48" />
+                <div className="h-[36vw] sm:h-40 md:h-36 overflow-hidden rounded-md">
+                  <LazyImage src={r.img} alt={r.title} aspectClass="h-[36vw] sm:h-40 md:h-36" />
                 </div>
                 <div className="mt-3">
                   <div className="text-sm font-medium text-white">{r.title}</div>
@@ -433,6 +368,42 @@ function LiveWorkbench({ live, loading, onOpen }) {
                 </div>
               </motion.article>
             ))}
+        </div>
+      </div>
+
+      {/* md+ screens: grid */}
+      <div className="hidden md:grid md:grid-cols-3 gap-4">
+        {loading
+          ? Array.from({ length: 3 }).map((_, i) => (
+            <article key={i} className="bg-[#0b0b0b] border border-white/5 rounded-lg p-3">
+              <div className="h-48 overflow-hidden rounded-md animate-pulse bg-neutral-800" />
+              <div className="mt-3">
+                <div className="h-4 w-3/4 bg-neutral-800 rounded mb-2 animate-pulse" />
+                <div className="h-3 w-1/4 bg-neutral-800 rounded animate-pulse" />
+              </div>
+            </article>
+          ))
+          : list.map((r) => (
+            <motion.article
+              key={r.id}
+              whileHover={{ y: -6 }}
+              className="bg-[#0b0b0b] border border-white/5 rounded-lg p-3 cursor-pointer"
+              onClick={() => onOpen(r.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onOpen(r.id);
+              }}
+            >
+              <div className="h-48 overflow-hidden rounded-md">
+                <LazyImage src={r.img} alt={r.title} aspectClass="h-48" />
+              </div>
+              <div className="mt-3">
+                <div className="text-sm font-medium text-white">{r.title}</div>
+                <div className="text-xs text-neutral-400 mt-1">• active now</div>
+              </div>
+            </motion.article>
+          ))}
       </div>
     </>
   );
@@ -610,10 +581,10 @@ function sampleCards() {
 
 function sampleLive() {
   return [
-    { id: "r1", title: "Smash Burger — sear tweak", img: "https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=800&auto=format&fit=crop", tags: ["All", "Quick"] },
-    { id: "r4", title: "Ramen — chili oil ratio", img: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?q=80&w=800&auto=format&fit=crop", tags: ["All", "Comfort"] },
-    { id: "r2", title: "Garlic pasta — low heat", img: "https://images.unsplash.com/photo-1525755662778-989d0524087e?q=80&w=800&auto=format&fit=crop", tags: ["All", "Vegan"] },
-    { id: "r5", title: "Buddha bowl — roast nuance", img: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?q=80&w=800&auto=format&fit=crop", tags: ["All", "Vegan"] },
+    { id: "r1", title: "Smash Burger - sear tweak", img: "https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=800&auto=format&fit=crop", tags: ["All", "Quick"] },
+    { id: "r4", title: "Ramen - chili oil ratio", img: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?q=80&w=800&auto=format&fit=crop", tags: ["All", "Comfort"] },
+    { id: "r2", title: "Garlic pasta - low heat", img: "https://images.unsplash.com/photo-1525755662778-989d0524087e?q=80&w=800&auto=format&fit=crop", tags: ["All", "Vegan"] },
+    { id: "r5", title: "Buddha bowl - roast nuance", img: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?q=80&w=800&auto=format&fit=crop", tags: ["All", "Vegan"] },
   ];
 }
 

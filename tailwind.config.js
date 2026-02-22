@@ -19,6 +19,7 @@ export default {
             filter: "brightness(1.3)",
           },
         },
+        
       },
       animation: {
         "spin-slow": "spin 3s linear infinite",

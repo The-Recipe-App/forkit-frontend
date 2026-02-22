@@ -166,3 +166,13 @@ body,
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
+.Toastify__toast {
+  background: rgba(0, 0, 0, 0.386);
+  backdrop-filter: blur(1px);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.Toastify__close-button {
+  color: white !important;
+}

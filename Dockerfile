@@ -1,5 +1,5 @@
 # ================================
-# Stage 1 — Build frontend
+# Stage 1 - Build frontend
 # ================================
 FROM node:20-alpine AS builder
 
@@ -35,7 +35,7 @@ RUN npm run build
 
 
 # ================================
-# Stage 2 — nginx production
+# Stage 2 - nginx production
 # ================================
 FROM nginx:alpine
 

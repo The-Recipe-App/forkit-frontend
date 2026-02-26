@@ -513,8 +513,9 @@ export default function Register() {
      Consent pre-register
      -------------------------------- */
   const handlePreRegisterConsent = useCallback(async () => {
-    safeDispatch({ type: "SET", key: "consentError", value: "" });
+    if (state.anyLoading) return;
     safeDispatch({ type: "SET_LOADING", payload: { preRegisterConsent: true } });
+    safeDispatch({ type: "SET", key: "consentError", value: "" });
 
     try {
       if (!state.challengeId) throw new Error("Missing registration challenge id");
@@ -975,9 +976,9 @@ export default function Register() {
         description="You must read and accept all policies."
         requireScroll
         consents={state.policiesMeta.map(p => ({ id: p.key || p.id || p.slug, label: `${p.title || p.name || p.display_name || p.key} ${p.version ? `(${p.version})` : ""}`, required: true }))}
-        onAgree={handlePreRegisterConsent}
+        onAgree={state.anyLoading ? null : handlePreRegisterConsent}
         onDisagree={() => safeDispatch({ type: "SET", key: "consentError", value: "You must accept all policies." })}
-        lock={false}
+        lock={true}
       >
         <div className="space-y-4">
           {state.policiesMeta.length === 0 && (

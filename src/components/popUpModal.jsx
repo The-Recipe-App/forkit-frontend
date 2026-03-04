@@ -73,12 +73,7 @@ export default function Modal({
     mode = "default",
     consents = [],
     requireAllConsents = true,
-    agreeLabel = "I Agree",
-    disagreeLabel = "I Do Not Agree",
-    onAgree,
-    onDisagree,
     requireScroll = false,
-    working = false,
 }) {
     const initialFocusRef = useRef(null);
     const bodyRef = useRef(null);

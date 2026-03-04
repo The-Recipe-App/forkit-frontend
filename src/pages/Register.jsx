@@ -509,11 +509,11 @@ export default function Register() {
     }
   }
 
-  /* --------------------------------
-     Consent pre-register
-     -------------------------------- */
+    /* --------------------------------
+      Consent pre-register
+    -------------------------------- */
   const handlePreRegisterConsent = useCallback(async () => {
-    if (state.anyLoading) return;
+    if (anyLoading) return;
     safeDispatch({ type: "SET_LOADING", payload: { preRegisterConsent: true } });
     safeDispatch({ type: "SET", key: "consentError", value: "" });
 
@@ -554,7 +554,7 @@ export default function Register() {
     } finally {
       safeDispatch({ type: "SET_LOADING", payload: { preRegisterConsent: false } });
     }
-  }, [isOAuth, state.challengeId, state.policiesMeta]);
+  }, [isOAuth, state.challengeId, state.policiesMeta, anyLoading]);
 
   /* --------------------------------
      Perform registration (normal or OAuth flow)
@@ -974,14 +974,11 @@ export default function Register() {
         mode="consent"
         type="consent"
         description="You must read and accept all policies."
-        working={state.anyLoading}
         requireScroll
         consents={state.policiesMeta.map(p => ({ id: p.key || p.id || p.slug, label: `${p.title || p.name || p.display_name || p.key} ${p.version ? `(${p.version})` : ""}`, required: true }))}
         primaryAction={{ 
           label: "I Agree", 
-          onClick: () => {
-            handlePreRegisterConsent();
-          }
+          onClick: handlePreRegisterConsent
         }}
         secondaryAction={{
           label: "I Do Not Agree",
@@ -989,7 +986,7 @@ export default function Register() {
             safeDispatch({ type: "SET", key: "consentError", value: "You must accept all policies." })
           }
         }}
-        lock={true}
+        lock
       >
         <div className="space-y-4">
           {state.policiesMeta.length === 0 && (

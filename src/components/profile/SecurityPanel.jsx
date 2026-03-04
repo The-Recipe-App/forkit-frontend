@@ -1024,7 +1024,7 @@ export default function SecurityCenterExpanded() {
                                     }}
                                     aria-label={OTPsent ? "Verify code" : "Send code"}
                                 >
-                                    {setPwRequesting ? "Sending..." : OTPsent ? "Verify code" : "Send code"}
+                                    {pwRequesting ? "Sending..." : OTPsent ? "Verify code" : "Send code"}
                                 </button>
                                 <button
                                     className="px-3 py-1 rounded bg-transparent text-xs"

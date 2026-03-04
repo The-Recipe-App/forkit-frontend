@@ -974,6 +974,7 @@ export default function Register() {
         mode="consent"
         type="consent"
         description="You must read and accept all policies."
+        working={state.anyLoading}
         requireScroll
         consents={state.policiesMeta.map(p => ({ id: p.key || p.id || p.slug, label: `${p.title || p.name || p.display_name || p.key} ${p.version ? `(${p.version})` : ""}`, required: true }))}
         onAgree={state.anyLoading ? null : handlePreRegisterConsent}

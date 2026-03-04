@@ -78,6 +78,7 @@ export default function Modal({
     onAgree,
     onDisagree,
     requireScroll = false,
+    working = false,
 }) {
     const initialFocusRef = useRef(null);
     const bodyRef = useRef(null);
@@ -292,11 +293,13 @@ export default function Modal({
                                             </button>
 
                                             <button
-                                                disabled={!consentAllowed}
+                                                disabled={!consentAllowed || working}
                                                 onClick={onAgree}
                                                 className="px-4 py-2 rounded-lg bg-gradient-to-b from-purple-500 to-purple-600 text-white shadow-lg disabled:opacity-40"
                                             >
-                                                {agreeLabel}
+                                                {working ? (
+                                                    <Loader2 size={16} className="animate-spin" />
+                                                ) : agreeLabel}
                                             </button>
                                         </>
                                     ) : (

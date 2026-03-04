@@ -157,7 +157,7 @@ export default function Modal({
         return (
             <button
                 key={action.label}
-                disabled={busy || action.disabled}
+                disabled={busy || action.disabled || (mode === "consent" && !consentAllowed)}
                 onClick={() => runAction(action)}
                 className={`${base} ${styles[style]}`}
             >
@@ -283,34 +283,13 @@ export default function Modal({
 
                             {!forceProgress && (
                                 <div className="flex flex-wrap justify-end gap-3">
-                                    {mode === "consent" ? (
-                                        <>
-                                            <button
-                                                onClick={onDisagree}
-                                                className="px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition"
-                                            >
-                                                {disagreeLabel}
-                                            </button>
-
-                                            <button
-                                                disabled={!consentAllowed || working}
-                                                onClick={onAgree}
-                                                className="px-4 py-2 rounded-lg bg-gradient-to-b from-purple-500 to-purple-600 text-white shadow-lg disabled:opacity-40"
-                                            >
-                                                {working ? (
-                                                    <Loader2 size={16} className="animate-spin" />
-                                                ) : agreeLabel}
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            {renderActionButton(secondaryAction, "secondary")}
-                                            {renderActionButton(tertiaryAction, "ghost")}
-                                            {renderActionButton(quaternaryAction, "ghost")}
-                                            {renderActionButton(quinaryAction, "ghost")}
-                                            {renderActionButton(primaryAction, "primary")}
-                                        </>
-                                    )}
+                                    <>
+                                        {renderActionButton(secondaryAction, "secondary")}
+                                        {renderActionButton(tertiaryAction, "ghost")}
+                                        {renderActionButton(quaternaryAction, "ghost")}
+                                        {renderActionButton(quinaryAction, "ghost")}
+                                        {renderActionButton(primaryAction, "primary")}
+                                    </>
                                 </div>
                             )}
                         </DialogPanel>

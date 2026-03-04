@@ -977,8 +977,18 @@ export default function Register() {
         working={state.anyLoading}
         requireScroll
         consents={state.policiesMeta.map(p => ({ id: p.key || p.id || p.slug, label: `${p.title || p.name || p.display_name || p.key} ${p.version ? `(${p.version})` : ""}`, required: true }))}
-        onAgree={state.anyLoading ? null : handlePreRegisterConsent}
-        onDisagree={() => safeDispatch({ type: "SET", key: "consentError", value: "You must accept all policies." })}
+        primaryAction={{ 
+          label: "I Agree", 
+          onClick: () => {
+            handlePreRegisterConsent();
+          }
+        }}
+        secondaryAction={{
+          label: "I Do Not Agree",
+          onClick: () => {
+            safeDispatch({ type: "SET", key: "consentError", value: "You must accept all policies." })
+          }
+        }}
         lock={true}
       >
         <div className="space-y-4">

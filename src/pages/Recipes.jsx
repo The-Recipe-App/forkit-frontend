@@ -9,6 +9,7 @@ import {
     TrendingUp,
 } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
+import backendUrlV1 from "../urls/backendUrl"
 
 /* ───────────────────────── Lazy Image ───────────────────────── */
 
@@ -69,6 +70,7 @@ export default function Recipes() {
     }), [params]);
 
     const filteredRecipes = useMemo(() => {
+        console.log(recipes);
         return recipes.filter(recipe => {
             if (filters.difficulty && recipe.meta.difficulty !== filters.difficulty) return false;
             if (filters.tag && !recipe.tags.includes(filters.tag)) return false;
@@ -76,10 +78,27 @@ export default function Recipes() {
         });
     }, [recipes, filters]);
 
+    const getRecipes = async () => {
+        try {
+            const response = await fetch(`${backendUrlV1}/recipes/feed/list?sort=recent&page=1&page_size=20`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            setRecipes(data?.items);
+        } catch(err) {
+            console.error("Failed to fetch recipes: ", err);
+        }
+
+    }
+
     useEffect(() => {
         setLoading(true);
         setTimeout(() => {
-            setRecipes(mockRecipes);
+            //setRecipes(mockRecipes);
+            getRecipes();
             setLoading(false);
         }, 500);
     }, [params]);
@@ -140,7 +159,7 @@ function RecipeCard({ recipe, isAuthorized, onOpen }) {
         >
             <div className="relative aspect-[4/3] overflow-hidden">
                 <LazyImage
-                    src={recipe.media.hero_image}
+                    src={recipe.media.image_url}
                     alt={recipe.title}
                     className="group-hover:translate-y-[-2px] transition-transform"
                 />

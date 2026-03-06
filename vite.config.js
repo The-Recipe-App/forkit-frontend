@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
     },
 
     preview: {
-      allowedHosts: ["forkit.up.railway.app"],
+      allowedHosts: ["forkit.up.railway.app", "literate-telegram-9r9xjj6rx4qhp496-5173.app.github.dev"],
       host: "0.0.0.0",
     },
 

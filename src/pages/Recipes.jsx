@@ -1,424 +1,368 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
+// Recipes.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Recipe surface — grid + pagination + server-driven filters.
+//
+// Filter params (sort, q, tag, difficulty) live in the URL and are read here
+// to pass to useRecipeFeed().  RecipeFilters writes those same params, so
+// changing a filter automatically triggers a fresh fetch with page reset.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React, { useMemo, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-    Clock,
-    Flame,
-    GitFork,
-    PlayCircle,
-    BadgeCheck,
-    TrendingUp,
+  Clock,
+  Flame,
+  GitFork,
+  PlayCircle,
+  BadgeCheck,
+  TrendingUp,
+  FlaskConical,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
 } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
-import backendUrlV1 from "../urls/backendUrl"
-
-/* ───────────────────────── Lazy Image ───────────────────────── */
-
-function LazyImage({ src, alt, className }) {
-    const [isVisible, setIsVisible] = useState(false);
-    const [loaded, setLoaded] = useState(false);
-    const ref = useRef(null);
-
-    useEffect(() => {
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                if (entry.isIntersecting) {
-                    setIsVisible(true);
-                    observer.disconnect();
-                }
-            },
-            { rootMargin: "200px" }
-        );
-
-        if (ref.current) observer.observe(ref.current);
-        return () => observer.disconnect();
-    }, []);
-
-    return (
-        <div ref={ref} className="w-full h-full bg-neutral-800 relative overflow-hidden">
-            {isVisible && (
-                <img
-                    src={src}
-                    alt={alt}
-                    loading="lazy"
-                    onLoad={() => setLoaded(true)}
-                    className={`
-                        w-full h-full object-cover transition-opacity duration-500
-                        ${loaded ? "opacity-100" : "opacity-0"}
-                        ${className || ""}
-                    `}
-                />
-            )}
-
-            {!loaded && (
-                <div className="absolute inset-0 animate-pulse bg-neutral-800" />
-            )}
-        </div>
-    );
-}
-
-/* ───────────────────────── Recipe Surface ───────────────────────── */
+import {
+  useRecipeFeed,
+  MOCK_RECIPES,
+} from "../components/recipe/recipeData";
+import {
+  LazyImage,
+  RecipeErrorBoundary,
+  PageError,
+  PageSkeleton,
+} from "../components/recipe/recipeUI";
+import RecipeFilters from "../components/recipe/RecipeFilters";
 
 export default function Recipes() {
-    const navigate = useNavigate();
-    const [params] = useSearchParams();
-    const { isAuthorized, recipes, setRecipes } = useContextManager();
-    const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const { isAuthorized } = useContextManager();
+  const gridRef = useRef(null);
 
-    const filters = useMemo(() => ({
-        difficulty: params.get("difficulty"),
-        tag: params.get("tag"),
-    }), [params]);
+  const { windowWidth } = useContextManager();
 
-    const filteredRecipes = useMemo(() => {
-        console.log(recipes);
-        return recipes.filter(recipe => {
-            if (filters.difficulty && recipe.meta.difficulty !== filters.difficulty) return false;
-            if (filters.tag && !recipe.tags.includes(filters.tag)) return false;
-            return true;
-        });
-    }, [recipes, filters]);
+  // All filter state comes from URL — RecipeFilters writes these, we just read
+  const sort = params.get("sort") || "recent";
+  const q = params.get("q") || undefined;
+  const tag = params.get("tag") || undefined;
+  const difficulty = params.get("difficulty") || undefined;
+  const page = Math.max(1, parseInt(params.get("page") || "1", 10));
 
-    const getRecipes = async () => {
-        try {
-            const response = await fetch(`${backendUrlV1}/recipes/feed/list?sort=recent&page=1&page_size=20`);
+  const { data, loading, error, reload } = useRecipeFeed({
+    sort,
+    q,
+    tag,
+    difficulty,
+    page,
+    pageSize: 20,
+  });
 
-            if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            setRecipes(data?.items);
-        } catch(err) {
-            console.error("Failed to fetch recipes: ", err);
-        }
-
+  // Scroll grid into view when page changes
+  useEffect(() => {
+    if (!loading && gridRef.current) {
+      gridRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+  }, [page, loading]);
 
-    useEffect(() => {
-        setLoading(true);
-        setTimeout(() => {
-            //setRecipes(mockRecipes);
-            getRecipes();
-            setLoading(false);
-        }, 500);
-    }, [params]);
+  const recipes = data?.items ?? (error ? MOCK_RECIPES : []);
+  const pagination = data?.pagination ?? null;
 
-    if (loading) {
-        return (
-            <div className="h-[60vh] flex items-center justify-center text-neutral-400">
-                Loading recipes…
-            </div>
-        );
-    }
+  function goToPage(n) {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("page", String(n));
+      return next;
+    });
+  }
 
+  if (loading) return <PageSkeleton count={8} />;
+
+  if (error && !data) {
     return (
-        <div className="px-6 py-6 max-w-[1500px] mx-auto">
-            <SurfaceHeader />
+      <div className="px-6 py-6 max-w-[1500px] mx-auto">
+        <SurfaceHeader />
+        <PageError error={error} onRetry={reload} className="min-h-[50vh]" />
+      </div>
+    );
+  }
 
-            <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredRecipes.map((recipe) => (
-                    <RecipeCard
-                        key={recipe.id}
-                        recipe={recipe}
-                        isAuthorized={isAuthorized}
-                        onOpen={() => navigate(`/recipes/${recipe.id}`)}
-                    />
-                ))}
+  return (
+    <div className="px-6 py-6 max-w-[1500px] mx-auto">
+      <SurfaceHeader pagination={pagination} />
 
-                {filteredRecipes.length === 0 && (
-                    <div className="col-span-full text-center text-neutral-500 py-16">
-                        No recipes match these filters.
-                    </div>
-                )}
-            </section>
+      {error && data && (
+        <div
+          role="status"
+          className="mb-4 flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-900/20 border border-amber-700/30 text-amber-300 text-sm"
+        >
+          <span>⚠️</span>
+          <span>Showing cached results — live feed unavailable.</span>
+          <button onClick={reload} className="ml-auto text-xs underline hover:text-amber-200">
+            Refresh
+          </button>
         </div>
-    );
+      )}
+
+      <div ref={gridRef}>
+        {recipes.length === 0 ? (
+          <EmptyState q={q} tag={tag} />
+        ) : (
+          <section
+            aria-label="Recipe grid"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+          >
+            {windowWidth < 1024 && <RecipeFilters />}
+            {recipes.map((recipe) => (
+              <RecipeErrorBoundary key={recipe.id} recipeId={recipe.id} recipeTitle={recipe.title}>
+                <RecipeCard
+                  recipe={recipe}
+                  isAuthorized={isAuthorized}
+                  onOpen={() => navigate(`/recipes/${recipe.id}`)}
+                />
+              </RecipeErrorBoundary>
+            ))}
+          </section>
+        )}
+      </div>
+
+      {pagination && (
+        <Pagination pagination={pagination} currentPage={page} onPageChange={goToPage} />
+      )}
+    </div>
+  );
 }
 
-/* ───────────────────────── Header ───────────────────────── */
+// ─────────────────────────────────────────────────────────────────────────────
+// Pagination
+// ─────────────────────────────────────────────────────────────────────────────
 
-function SurfaceHeader() {
-    return (
-        <header className="mb-6">
-            <h1 className="text-3xl font-semibold text-white">Recipes</h1>
-            <p className="text-neutral-400 mt-1 max-w-2xl">
-                Recipes evolve here. Fork ideas, improve techniques,
-                and discover what the community is cooking next.
-            </p>
-        </header>
-    );
+function Pagination({ pagination, currentPage, onPageChange }) {
+  const { total_pages, has_prev, has_next, total, page_size } = pagination;
+
+  function getPages() {
+    if (total_pages <= 7) return Array.from({ length: total_pages }, (_, i) => i + 1);
+    const pages = new Set([1, total_pages, currentPage]);
+    for (let d = 1; d <= 2; d++) {
+      if (currentPage - d >= 1) pages.add(currentPage - d);
+      if (currentPage + d <= total_pages) pages.add(currentPage + d);
+    }
+    const sorted = [...pages].sort((a, b) => a - b);
+    const result = [];
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push(null);
+      result.push(sorted[i]);
+    }
+    return result;
+  }
+
+  const from = (currentPage - 1) * page_size + 1;
+  const to = Math.min(currentPage * page_size, total);
+
+  return (
+    <nav aria-label="Pagination" className="mt-10 flex flex-col items-center gap-4">
+      <p className="text-xs text-neutral-500 tracking-wide">
+        Showing{" "}
+        <span className="text-neutral-300 font-medium">{from.toLocaleString()}–{to.toLocaleString()}</span>
+        {" "}of{" "}
+        <span className="text-neutral-300 font-medium">{total.toLocaleString()}</span>
+        {" "}recipes
+      </p>
+
+      <div className="flex items-center gap-1">
+        <PageButton onClick={() => onPageChange(currentPage - 1)} disabled={!has_prev} aria-label="Previous page">
+          <ChevronLeft size={16} />
+        </PageButton>
+
+        {getPages().map((p, i) =>
+          p === null ? (
+            <span key={`ellipsis-${i}`} className="w-9 text-center text-neutral-600 select-none">…</span>
+          ) : (
+            <PageButton
+              key={p}
+              onClick={() => onPageChange(p)}
+              active={p === currentPage}
+              aria-label={`Page ${p}`}
+              aria-current={p === currentPage ? "page" : undefined}
+            >
+              {p}
+            </PageButton>
+          )
+        )}
+
+        <PageButton onClick={() => onPageChange(currentPage + 1)} disabled={!has_next} aria-label="Next page">
+          <ChevronRight size={16} />
+        </PageButton>
+      </div>
+    </nav>
+  );
 }
 
-/* ───────────────────────── Recipe Card ───────────────────────── */
+function PageButton({ children, onClick, disabled, active, ...rest }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={[
+        "min-w-[36px] h-9 px-2 rounded-lg text-sm font-medium transition-colors",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
+        active ? "bg-amber-500 text-black" :
+          disabled ? "text-neutral-700 cursor-not-allowed" :
+            "text-neutral-400 hover:bg-neutral-800 hover:text-white",
+      ].join(" ")}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header / empty state
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SurfaceHeader({ pagination }) {
+  return (
+    <header className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <h1 className="text-3xl font-semibold text-white">Recipes</h1>
+        <p className="text-neutral-400 mt-1 max-w-2xl">
+          Recipes evolve here. Fork ideas, improve techniques, and discover what the community is cooking next.
+        </p>
+      </div>
+      {pagination?.total != null && (
+        <span className="text-sm text-neutral-500 self-end pb-1">
+          {pagination.total.toLocaleString()} recipes
+        </span>
+      )}
+    </header>
+  );
+}
+
+function EmptyState({ q, tag }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center text-neutral-500">
+      <span className="text-4xl">🍽️</span>
+      <p className="text-base">
+        {q ? `No recipes match "${q}"` :
+          tag ? `No recipes tagged "${tag}"` :
+            "No recipes found"}
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Recipe Card (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 
 function RecipeCard({ recipe, isAuthorized, onOpen }) {
-    return (
-        <article
-            onClick={onOpen}
-            className="bg-black/40 rounded-xl overflow-hidden cursor-pointer hover:bg-neutral-700/20 transition group relative"
-        >
-            <div className="relative aspect-[4/3] overflow-hidden">
-                <LazyImage
-                    src={recipe.media.image_url}
-                    alt={recipe.title}
-                    className="group-hover:translate-y-[-2px] transition-transform"
-                />
+  return (
+    <article
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onOpen(); }}
+      aria-label={`Open ${recipe.title}`}
+      className="bg-black/40 rounded-xl overflow-hidden cursor-pointer hover:bg-neutral-700/20 transition group relative focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+    >
+      <div className="relative aspect-[4/3] overflow-hidden">
+        <LazyImage
+          src={recipe.media?.imageUrl}
+          alt={recipe.title}
+          className="group-hover:scale-[1.02] transition-transform duration-300"
+          aspectClass="aspect-[4/3]"
+        />
+        {recipe.media?.hasVideo && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <PlayCircle size={42} className="text-white/80 drop-shadow" />
+          </div>
+        )}
+        <RecipeBadges recipe={recipe} />
+      </div>
 
-                {recipe.media.has_video && (
-                    <PlayCircle className="absolute inset-0 m-auto text-white/80" size={42} />
-                )}
-
-                <RecipeBadges recipe={recipe} />
-            </div>
-
-            <div className="p-4 space-y-3">
-                <TitleBlock recipe={recipe} />
-                <StatsRow recipe={recipe} />
-                <TagRow tags={recipe.tags} />
-
-                {!isAuthorized && (
-                    <div className="pt-1 text-xs text-neutral-500">
-                        🔒 Fork to customize & evolve
-                    </div>
-                )}
-            </div>
-        </article>
-    );
+      <div className="p-4 space-y-3">
+        <TitleBlock recipe={recipe} />
+        <StatsRow recipe={recipe} />
+        <TagRow tags={recipe.tags} />
+        {!isAuthorized && (
+          <p className="text-xs text-neutral-500">🔒 Fork to customize &amp; evolve</p>
+        )}
+      </div>
+    </article>
+  );
 }
 
-/* ───────────────────────── Subcomponents ───────────────────────── */
-
 function RecipeBadges({ recipe }) {
-    return (
-        <div className="absolute top-2 left-2 flex gap-2">
-            {recipe.status.is_trending && <Badge icon={TrendingUp} label="Trending" />}
-            {recipe.status.is_verified && <Badge icon={BadgeCheck} label="Verified" />}
-        </div>
-    );
+  return (
+    <div className="absolute top-2 left-2 flex gap-2">
+      {recipe.status?.isTrending && <Badge icon={TrendingUp} label="Trending" />}
+      {recipe.status?.isVerified && <Badge icon={BadgeCheck} label="Verified" />}
+      {recipe.status?.isExperimental && <Badge icon={FlaskConical} label="Experimental" />}
+    </div>
+  );
 }
 
 function Badge({ icon: Icon, label }) {
-    return (
-        <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-black/60 text-white">
-            <Icon size={12} />
-            {label}
-        </span>
-    );
+  return (
+    <span className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-black/60 text-white backdrop-blur-sm">
+      <Icon size={12} />{label}
+    </span>
+  );
 }
 
 function TitleBlock({ recipe }) {
-    return (
-        <div>
-            <h3 className="text-lg font-medium text-white line-clamp-1">{recipe.title}</h3>
-            <p className="text-sm text-neutral-400">
-                by {recipe.author.username}
-                {recipe.lineage.is_fork && (
-                    <span className="ml-2 text-xs text-neutral-500">· Forked</span>
-                )}
-            </p>
-        </div>
-    );
+  return (
+    <div>
+      <h3 className="text-base font-medium text-white line-clamp-1">{recipe.title}</h3>
+      <p className="text-sm text-neutral-400 mt-0.5">
+        by {recipe.author?.username ?? "Unknown"}
+        {recipe.lineage?.isFork && <span className="ml-2 text-xs text-neutral-500">· Forked</span>}
+      </p>
+    </div>
+  );
 }
 
 function StatsRow({ recipe }) {
-    return (
-        <div className="flex items-center gap-4 text-sm text-neutral-400">
-            <span className="flex items-center gap-1">
-                <GitFork size={14} />
-                {recipe.lineage.forks_count}
-            </span>
-            <span className="flex items-center gap-1">
-                <Clock size={14} />
-                {recipe.meta.time_minutes} min
-            </span>
-            <span className="flex items-center gap-1 capitalize">
-                <Flame size={14} />
-                {recipe.meta.difficulty}
-            </span>
-        </div>
-    );
+  const forks = recipe.stats.forks ?? {};
+  const { timeMinutes, difficulty } = recipe.meta ?? {};
+  const views = recipe.stats.views ?? {};
+
+  return (
+    <div className="flex items-center gap-4 text-sm text-neutral-400">
+      {forks != null && (
+        <span className="flex items-center gap-1" title={`${forks} forks`}>
+          <GitFork size={14} />{forks}
+        </span>
+      )}
+      {views != null && (
+        <span className="flex items-center gap-1" title={`${views} views`}>
+          <Eye size={14} />{views}
+        </span>
+      )}
+      {timeMinutes != null && (
+        <span className="flex items-center gap-1" title={`${timeMinutes} minutes`}>
+          <Clock size={14} />{timeMinutes} min
+        </span>
+      )}
+      {difficulty != null && (
+        <span className="flex items-center gap-1 capitalize" title={`Difficulty: ${difficulty}`}>
+          <Flame size={14} />{difficulty}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function TagRow({ tags }) {
-    return (
-        <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-                <span key={tag} className="px-2 py-0.5 text-xs rounded bg-neutral-800 text-neutral-300">
-                    {tag}
-                </span>
-            ))}
-        </div>
-    );
+  if (!tags?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tags.map((tag) => (
+        <span key={tag} className="px-2 py-0.5 text-xs rounded bg-neutral-800 text-neutral-300">
+          {tag}
+        </span>
+      ))}
+    </div>
+  );
 }
-
-/* ───────────────────────── Mock Data ───────────────────────── */
-
-
-const mockRecipes = [
-    {
-        id: "r1",
-        slug: "juicy-smash-burgers",
-        title: "Juicy Smash Burgers",
-        media: {
-            hero_image: "https://images.unsplash.com/photo-1550547660-d9450f859349",
-            has_video: true,
-        },
-        author: { id: "u1", username: "BurgerDude" },
-        lineage: {
-            is_fork: false,
-            depth: 0,
-            forks_count: 150,
-            improvements_count: 12,
-        },
-        stats: {
-            views: 4300,
-            forks: 150,
-            likes: 820,
-            used_by: 300,
-        },
-        meta: {
-            time_minutes: 25,
-            difficulty: "easy",
-        },
-        tags: ["quick", "comfort"],
-        status: {
-            is_trending: true,
-            is_verified: true,
-            is_experimental: false,
-        },
-        timestamps: {},
-    },
-    {
-        id: "r2",
-        slug: "creamy-garlic-pasta",
-        title: "Creamy Garlic Pasta",
-        media: {
-            hero_image: "https://images.unsplash.com/photo-1525755662778-989d0524087e",
-            has_video: false,
-        },
-        author: { id: "u2", username: "PastaQueen" },
-        lineage: {
-            is_fork: false,
-            depth: 0,
-            forks_count: 90,
-            improvements_count: 6,
-        },
-        stats: {
-            views: 2800,
-            forks: 90,
-            likes: 560,
-            used_by: 210,
-        },
-        meta: {
-            time_minutes: 20,
-            difficulty: "easy",
-        },
-        tags: ["vegetarian", "comfort", "quick"],
-        status: {
-            is_trending: true,
-            is_verified: false,
-            is_experimental: false,
-        },
-        timestamps: {},
-    },
-    {
-        id: "r3",
-        slug: "crispy-chicken-tacos",
-        title: "Crispy Chicken Tacos",
-        media: {
-            hero_image: "https://images.unsplash.com/photo-1719948515819-71265e1abb0d?q=80&w=1074&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-            has_video: true,
-        },
-        author: { id: "u3", username: "TacoMaster" },
-        lineage: {
-            is_fork: false,
-            depth: 0,
-            forks_count: 200,
-            improvements_count: 18,
-        },
-        stats: {
-            views: 5200,
-            forks: 200,
-            likes: 1100,
-            used_by: 450,
-        },
-        meta: {
-            time_minutes: 30,
-            difficulty: "medium",
-        },
-        tags: ["mexican", "street-food", "non-vegetarian"],
-        status: {
-            is_trending: true,
-            is_verified: true,
-            is_experimental: false,
-        },
-        timestamps: {},
-    },
-    {
-        id: "r4",
-        slug: "spicy-ramen-hack",
-        title: "Spicy Ramen Hack",
-        media: {
-            hero_image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624",
-            has_video: true,
-        },
-        author: { id: "u6", username: "NoodleNerd" },
-        lineage: {
-            is_fork: true,
-            depth: 1,
-            forks_count: 45,
-            improvements_count: 3,
-        },
-        stats: {
-            views: 1600,
-            forks: 45,
-            likes: 390,
-            used_by: 120,
-        },
-        meta: {
-            time_minutes: 10,
-            difficulty: "easy",
-        },
-        tags: ["quick", "spicy", "experimental"],
-        status: {
-            is_trending: false,
-            is_verified: false,
-            is_experimental: true,
-        },
-        timestamps: {},
-    },
-    {
-        id: "r5",
-        slug: "vegan-buddha-bowl",
-        title: "Vegan Buddha Bowl",
-        media: {
-            hero_image: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe",
-            has_video: false,
-        },
-        author: { id: "u8", username: "PlantPowered" },
-        lineage: {
-            is_fork: false,
-            depth: 0,
-            forks_count: 70,
-            improvements_count: 5,
-        },
-        stats: {
-            views: 2100,
-            forks: 70,
-            likes: 480,
-            used_by: 180,
-        },
-        meta: {
-            time_minutes: 25,
-            difficulty: "easy",
-        },
-        tags: ["vegan", "healthy"],
-        status: {
-            is_trending: false,
-            is_verified: true,
-            is_experimental: false,
-        },
-        timestamps: {},
-    },
-];
-

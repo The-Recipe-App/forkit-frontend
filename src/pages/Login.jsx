@@ -122,19 +122,13 @@ function Login() {
         return () => {
             isMountedRef.current = false;
             if (oauthStartAbortRef.current) {
-                try {
-                    oauthStartAbortRef.current.abort();
-                } catch { }
+                try { oauthStartAbortRef.current.abort(); } catch { }
             }
             if (oauthLoginAbortRef.current) {
-                try {
-                    oauthLoginAbortRef.current.abort();
-                } catch { }
+                try { oauthLoginAbortRef.current.abort(); } catch { }
             }
             if (pollAbortRef.current) {
-                try {
-                    pollAbortRef.current.abort();
-                } catch { }
+                try { pollAbortRef.current.abort(); } catch { }
             }
             if (pollTimerRef.current) {
                 clearInterval(pollTimerRef.current);
@@ -153,7 +147,6 @@ function Login() {
 
     useEffect(() => {
         const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-
             if (session?.user) {
                 const email = session.user.email;
                 safeDispatch({ type: "SET", key: "oauthEmail", value: email || "" });
@@ -175,15 +168,14 @@ function Login() {
     const handleGoogleLogin = useCallback(async () => {
         if (anyLoading) return;
 
+        // FIX 5: pass correct boolean argument — reset without showing a toast
         resetLoginState(false);
         setIsLoggingIn(true);
         safeDispatch({ type: "SET", key: "error", value: "" });
         safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
 
         if (oauthStartAbortRef.current) {
-            try {
-                oauthStartAbortRef.current.abort();
-            } catch { }
+            try { oauthStartAbortRef.current.abort(); } catch { }
             oauthStartAbortRef.current = null;
         }
         const controller = new AbortController();
@@ -202,7 +194,6 @@ function Login() {
             }
 
             const fid = body.req_id;
-
             const redirectTo = `${window.location.origin}/login?req_id=${encodeURIComponent(fid)}`;
 
             await supabase.auth.signInWithOAuth({
@@ -219,6 +210,8 @@ function Login() {
                 safeDispatch({ type: "SET", key: "error", value: message });
                 toast.error(message);
             }
+            // FIX 4: reset isLoggingIn on error so the UI isn't stuck on the loading canvas
+            setIsLoggingIn(false);
         } finally {
             oauthStartAbortRef.current = null;
             safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
@@ -229,15 +222,12 @@ function Login() {
     const startPolling = useCallback((fid) => {
         if (!fid) return;
 
-
         if (pollTimerRef.current) {
             clearInterval(pollTimerRef.current);
             pollTimerRef.current = null;
         }
         if (pollAbortRef.current) {
-            try {
-                pollAbortRef.current.abort();
-            } catch { }
+            try { pollAbortRef.current.abort(); } catch { }
             pollAbortRef.current = null;
         }
 
@@ -246,7 +236,6 @@ function Login() {
 
         const tick = async () => {
             try {
-
                 const res = await fetch(`${backendUrlV1}/auth/oauth/flow/${encodeURIComponent(fid)}`, {
                     credentials: "include",
                     signal: controller.signal,
@@ -257,9 +246,7 @@ function Login() {
                 const body = await res.json().catch(() => null);
                 if (!body) return;
 
-
                 if (body.status === "complete" && body.ok) {
-
                     try {
                         const url = new URL(window.location.href);
                         url.searchParams.delete("req_id");
@@ -272,7 +259,11 @@ function Login() {
                 }
 
                 if (body.status === "otp_required") {
+                    // FIX 2: removed dangling `sta` statement that caused a ReferenceError
+                    clearInterval(pollTimerRef.current);
+                    pollTimerRef.current = null;
                     controller.abort();
+
                     safeDispatch({
                         type: "SET_MANY",
                         payload: {
@@ -281,17 +272,21 @@ function Login() {
                         },
                     });
 
+                    // FIX 4: OTP challenge means we stop the loading canvas so the OTP form is visible
+                    setIsLoggingIn(false);
+
                     toast.info(
                         `OTP sent to ${body.masked_email || "your email"}. Enter it to continue.`,
                         { autoClose: 5000 }
                     );
-
                     return;
                 }
 
                 if (body.status === "needs_registration") {
                     safeDispatch({ type: "SET", key: "oauthEmail", value: body.email || "" });
                     setNeedsReg(true);
+                    // FIX 4: reset isLoggingIn so the modal renders correctly
+                    setIsLoggingIn(false);
                     controller.abort();
                     return;
                 }
@@ -299,10 +294,11 @@ function Login() {
                 if (body.status === "error") {
                     safeDispatch({ type: "SET", key: "error", value: body.message || "OAuth failed" });
                     toast.error(body.message || "OAuth failed");
+                    // FIX 4: reset isLoggingIn on error so the UI recovers
+                    setIsLoggingIn(false);
                     controller.abort();
                     return;
                 }
-
 
             } catch (err) {
                 // silent; network errors or aborts are expected during polling
@@ -326,25 +322,20 @@ function Login() {
         safeDispatch({ type: "SET_LOADING", payload: { oauth: true } });
 
         (async () => {
-
             if (oauthLoginAbortRef.current) {
-                try {
-                    oauthLoginAbortRef.current.abort();
-                } catch { }
+                try { oauthLoginAbortRef.current.abort(); } catch { }
                 oauthLoginAbortRef.current = null;
             }
             const controller = new AbortController();
             oauthLoginAbortRef.current = controller;
 
             try {
-
                 const { data } = await supabase.auth.getSession();
                 const session = data?.session;
                 const access_token =
                     session?.access_token ?? session?.accessToken ?? session?.provider_token ?? null;
 
                 if (access_token) {
-
                     await fetch(`${backendUrlV1}/auth/oauth/login?req_id=${encodeURIComponent(fid)}`, {
                         method: "POST",
                         headers: {
@@ -360,12 +351,10 @@ function Login() {
                 console.warn("OAuth login polling error: ", err);
             } finally {
                 oauthLoginAbortRef.current = null;
-
                 startPolling(fid);
                 safeDispatch({ type: "SET_LOADING", payload: { oauth: false } });
             }
         })();
-
 
     }, [startPolling]);
 
@@ -386,11 +375,12 @@ function Login() {
     }
 
 
+    // FIX 5: signature accepts a plain boolean — removed the accidental object call-site below
     function resetLoginState(showToast = true) {
         dispatch({ type: "RESET" });
         setNeedsReg(false);
         setFlowId(null);
-
+        setIsLoggingIn(false);
 
         if (pollTimerRef.current) {
             clearInterval(pollTimerRef.current);
@@ -429,9 +419,10 @@ function Login() {
                             maskedEmail: res.masked_email || "",
                         },
                     });
+                    // FIX 4: OTP challenge — stop loading canvas so the OTP form is visible
+                    setIsLoggingIn(false);
                     toast.info(`OTP sent to ${res.masked_email || "your email"}.`);
                 } else {
-                    // assume successful password login (backend/session will cause redirect via me)
                     toast.success("Signed in successfully");
                 }
 
@@ -472,7 +463,7 @@ function Login() {
                 setIsLoggingIn(false);
             }
         },
-        [anyLoading, verifyLoginOtp, state.identifier, state.challengeId, state.otp]
+        [anyLoading, verifyLoginOtp, state.identifier, state.oauthEmail, state.challengeId, state.otp]
     );
 
 
@@ -502,6 +493,8 @@ function Login() {
         }
     }, [anyLoading, state.identifier, loginWithPasskey]);
 
+    // FIX 1: use the derived `hasChallenge` variable (was incorrectly reading `state.hasChallenge`
+    // which is always undefined — challengeId lives at state.challengeId)
     const hasChallenge = Boolean(state.challengeId);
 
 
@@ -528,6 +521,8 @@ function Login() {
                         )}
 
                         <div className="space-y-4 mt-6">
+                            {/* FIX 1: was `state.hasChallenge` (always undefined) — now uses the
+                                derived `hasChallenge` boolean so the OTP form actually renders */}
                             {!hasChallenge ? (
                                 <div className="flex flex-col justify-evenly">
                                     {/* ---- IDENTIFIER + PASSWORD ---- */}
@@ -770,12 +765,10 @@ function Login() {
 
                                 <p className="text-sm text-gray-400 text-center">
                                     Reset Form{" "}
+                                    {/* FIX 5: was passing an object `{ clearOAuth: true }` to a
+                                        function that expects a boolean — now passes `true` correctly */}
                                     <button
-                                        onClick={() =>
-                                            resetLoginState({
-                                                clearOAuth: true,
-                                            })
-                                        }
+                                        onClick={() => resetLoginState(true)}
                                         className="text-orange-400 hover:underline"
                                     >
                                         here

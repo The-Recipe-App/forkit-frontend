@@ -1,4 +1,4 @@
-async function proxyTo(request, targetUrl) {
+export async function proxyTo(request, targetUrl) {
   const headers = new Headers(request.headers);
   headers.set('X-Forwarded-Proto', 'https');
   headers.set('X-Forwarded-Port', '443');

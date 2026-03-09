@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
     },
 
     preview: {
-      allowedHosts: ["forkit.up.railway.app"],
+      allowedHosts: ["forkit.up.railway.app", "forkit.pages.dev"],
       host: "0.0.0.0",
     },
 

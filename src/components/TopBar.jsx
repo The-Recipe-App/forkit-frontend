@@ -133,7 +133,7 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode }) => {
                                 label="Favorites"
                                 onClick={() => {
                                     if (!isAuthorized) return setShowAuthGate(true);
-                                    setShowCreateHint(true);
+                                    navigate("/recipes?view=favorites");
                                 }}
                             />
                         </nav>

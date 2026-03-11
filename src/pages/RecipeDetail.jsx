@@ -14,7 +14,7 @@
 //   Falls back to MOCK_RECIPES when API is unavailable.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
     GitFork,
@@ -29,10 +29,12 @@ import {
     ListOrdered,
     Leaf,
     AlertTriangle,
+    Upload,
 } from "lucide-react";
 import { useContextManager } from "../features/ContextProvider";
-import { useRecipe, useRecommendations, MOCK_RECIPES, normalizeRecipe } from "../components/recipe/recipeData";
+import { useRecipe, useRecommendations, MOCK_RECIPES, normalizeRecipe, favoriteRecipe } from "../components/recipe/recipeData";
 import { LazyImage, PageError, CardSkeleton } from "../components/recipe/recipeUI";
+import backendUrlV1 from "../urls/backendUrl";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -196,6 +198,18 @@ function EvolutionRow({ label, value }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function RightColumn({ recipe, isAuthorized, navigate }) {
+    const [isFavoriteRecipe, setFavoriteRecipe] = useState(false);
+    console.log(recipe);
+    const toggleFavorite = () => {
+        if (isAuthorized) {
+            if (favoriteRecipe(recipe.id)) {
+                setFavoriteRecipe(!isFavoriteRecipe);
+            };
+        }
+    }
+    useEffect(() => {
+        setFavoriteRecipe(recipe.status.isFavorited)
+    }, [recipe]);
     return (
         <div className="space-y-6">
             {/* Title */}
@@ -208,7 +222,7 @@ function RightColumn({ recipe, isAuthorized, navigate }) {
 
             {/* Author + stats */}
             <div className="flex flex-wrap items-center gap-4 text-sm text-neutral-400">
-                <div className="flex items-center gap-2 cursor-pointer" onClick={() => {window.open(`/profile/${recipe.author.username}`, "_blank")}}>
+                <div className="flex items-center gap-2 cursor-pointer" onClick={() => { window.open(`/profile/${recipe.author.username}`, "_blank") }}>
                     <img
                         src={recipe.author?.avatar_url || `https://api.dicebear.com/7.x/thumbs/svg?seed=${recipe.author.username}`}
                         className="w-6 h-6 rounded-full bg-neutral-800"
@@ -257,10 +271,28 @@ function RightColumn({ recipe, isAuthorized, navigate }) {
                 <button
                     aria-label="Like this recipe"
                     className="p-2 rounded-lg bg-[#141414] hover:bg-black/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                    onClick={() => { toggleFavorite() }}
                 >
-                    <Heart size={16} className="text-neutral-400" />
+                    <Heart size={16} className={`${isFavoriteRecipe ? "fill-red-600 text-red-600 " : "text-neutral-400 "}`} />
                 </button>
             </div>
+
+            {recipe.status.isDraft && (
+                <div className="flex flex-col gap-3">
+                    <p className="text-sm text-neutral-400">This recipe is a draft</p>
+                    <button
+                        disabled={!isAuthorized}
+                        aria-disabled={!isAuthorized}
+                        onClick={() => {
+                            fetch(`${backendUrlV1}/recipes/${recipe.id}/publish`, { method: "POST", credentials: "include" });
+                        }}
+                        className="disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 text-black text-sm font-medium hover:bg-orange-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 w-fit"
+                    >
+                        <Upload size={14} />
+                        Publish this draft
+                    </button>
+                </div>
+            )}
 
             {/* Moderation banner — shown to any viewer who reported, or moderators */}
             {recipe.moderation && (recipe.moderation.viewerReported || recipe.moderation.recentReports) && (
@@ -422,8 +454,8 @@ function ModerationBanner({ moderation }) {
         <div
             role="status"
             className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm ${isMod
-                    ? "bg-red-950/20 border-red-900/30 text-red-300"
-                    : "bg-amber-950/20 border-amber-900/30 text-amber-300"
+                ? "bg-red-950/20 border-red-900/30 text-red-300"
+                : "bg-amber-950/20 border-amber-900/30 text-amber-300"
                 }`}
         >
             <Flag size={16} className="flex-none mt-0.5 opacity-70" />

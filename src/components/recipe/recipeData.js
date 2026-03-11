@@ -22,6 +22,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import backendUrlV1 from "../../urls/backendUrl";
+import { useMe } from "../../hooks/useMe";
+import { useQuery } from "@tanstack/react-query";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Canonical UI shape  (what components consume)
@@ -215,6 +217,8 @@ export function normalizeRecipe(raw) {
         isTrending: raw.status?.is_trending ?? raw.status?.isTrending ?? false,
         isExperimental: raw.status?.is_experimental ?? raw.status?.isExperimental ?? false,
         isVerified: raw.status?.is_verified ?? raw.status?.isVerified ?? false,
+        isFavorited: raw.viewer_favorite ?? raw.status?.viewer_favorite ?? false,
+        isDraft: raw.is_draft ?? false,
     };
 
     // ── timestamps ────────────────────────────────────────────────────────────
@@ -312,9 +316,15 @@ export function normalizeRecipe(raw) {
 // Internal fetch helper
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function apiFetch(path, signal) {
-    const url = `${backendUrlV1}${path}`;
-    const res = await fetch(url, { signal });
+async function apiFetch(path, signal, { viewDrafts = false } = {}) {
+    const draftsPath = viewDrafts
+        ? path.includes("?")
+            ? `${path}&is_draft=true`
+            : `${path}?is_draft=true`
+        : path;
+
+    const url = `${backendUrlV1}${draftsPath}`;
+    const res = await fetch(url, { credentials: "include", signal });
     if (!res.ok) {
         const err = new Error(`HTTP ${res.status}`);
         err.status = res.status;
@@ -402,6 +412,23 @@ export function useRecipeFeed(params = {}) {
         },
         [sort, page, pageSize, q, authorId, isDraft, licenseCode],
     );
+}
+
+export function useUserFavorites({ page, pageSize, enabled }) {
+    const me = useMe();
+    const { id: userId } = me.data ?? {};
+    return useQuery({
+        queryKey: ["favorites", userId, page, pageSize],
+        queryFn: async () => {
+            const res = await fetch(
+                `${backendUrlV1}/recipes/feed/${userId}/favorites?page=${page}&page_size=${pageSize}`,
+                { credentials: "include" }
+            );
+            if (!res.ok) throw new Error("Failed to fetch favorites");
+            return res.json();
+        },
+        enabled: !!enabled && !!userId,
+    });
 }
 
 /**
@@ -553,3 +580,11 @@ export const MOCK_RECIPES = [
         forks: [{ id: "f7", author: "SauceBoss", summary: "Spicy tahini sauce" }],
     },
 ];
+
+export async function favoriteRecipe(recipeId) {
+    const url = `${backendUrlV1}/recipes/${recipeId}/favorite`;
+    const res = await fetch(url, { method: "POST", credentials: "include" });
+    if (!res.ok) console.error(res);
+    if (res.status === 200) return true;
+    return false;
+}

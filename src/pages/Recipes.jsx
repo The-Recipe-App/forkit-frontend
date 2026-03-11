@@ -25,6 +25,7 @@ import { useContextManager } from "../features/ContextProvider";
 import {
   useRecipeFeed,
   MOCK_RECIPES,
+  useUserFavorites,
 } from "../components/recipe/recipeData";
 import {
   LazyImage,
@@ -37,26 +38,31 @@ import RecipeFilters from "../components/recipe/RecipeFilters";
 export default function Recipes() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { isAuthorized } = useContextManager();
+  const { isAuthorized, user } = useContextManager();
   const gridRef = useRef(null);
-
   const { windowWidth } = useContextManager();
 
-  // All filter state comes from URL — RecipeFilters writes these, we just read
   const sort = params.get("sort") || "recent";
   const q = params.get("q") || undefined;
   const tag = params.get("tag") || undefined;
   const difficulty = params.get("difficulty") || undefined;
   const page = Math.max(1, parseInt(params.get("page") || "1", 10));
 
-  const { data, loading, error, reload } = useRecipeFeed({
-    sort,
-    q,
-    tag,
-    difficulty,
+  const viewFavorites = params.get("view") === "favorites";
+
+  const feedResult = useRecipeFeed({
+    sort, q, tag, difficulty, page, pageSize: 20,
+    enabled: !viewFavorites,
+  });
+
+  const favResult = useUserFavorites({
+    userId: user?.id,
     page,
     pageSize: 20,
+    enabled: viewFavorites,
   });
+
+  const { data, loading, error, reload } = viewFavorites ? favResult : feedResult;
 
   // Scroll grid into view when page changes
   useEffect(() => {
@@ -88,7 +94,7 @@ export default function Recipes() {
   }
 
   return (
-    <div className="px-6 py-6 max-w-[1500px] mx-auto">
+    <div ref={gridRef} className="px-6 py-6 max-w-[1500px] mx-auto">
       <SurfaceHeader pagination={pagination} />
 
       {error && data && (
@@ -104,7 +110,7 @@ export default function Recipes() {
         </div>
       )}
 
-      <div ref={gridRef}>
+      <div>
         {recipes.length === 0 ? (
           <EmptyState q={q} tag={tag} />
         ) : (

@@ -136,6 +136,14 @@ const TopBar = ({ isAuthorized, windowWidth, setSidebarMode }) => {
                                     navigate("/recipes?view=favorites");
                                 }}
                             />
+                            <IconButton
+                                icon={PlusCircle}
+                                label="Create"
+                                onClick={() => {
+                                    if (!isAuthorized) return setShowAuthGate(true);
+                                    navigate("/recipes/create");
+                                }}
+                            />
                         </nav>
                     )}
 
@@ -181,12 +189,12 @@ const DROPDOWN_VARIANTS = {
     },
 };
 
-const DropdownItem = ({ icon: Icon, label, variant = "default", rounded_top, rounded_bottom }) => {
+const DropdownItem = ({ icon: Icon, label, variant = "default", rounded_top, rounded_bottom, onClick }) => {
     const styles = DROPDOWN_VARIANTS[variant];
     return (
         <div
             className={`w-full flex items-center gap-3 px-4 py-3 text-sm ${styles.text} hover:bg-neutral-800 transition-colors ${rounded_top ? "rounded-t-lg" : ""
-                } ${rounded_bottom ? "rounded-b-lg" : ""}`}
+                } ${rounded_bottom ? "rounded-b-lg" : ""}`} onClick={onClick}
         >
             <Icon size={18} className={styles.icon} />
             <span>{label}</span>
@@ -306,11 +314,21 @@ const ProfileButton = ({ isAuthorized, me, windowWidth, setShowLogout }) => {
                                 )}
 
                                 <button className="w-full text-left">
-                                    <DropdownItem icon={PlusCircle} label="Create" />
+                                    <DropdownItem icon={PlusCircle} label="Create"
+                                        onClick={() => {
+                                            if (!isAuthorized) return setShowAuthGate(true);
+                                            navigate("/recipes/create");
+                                        }}
+                                    />
                                 </button>
 
                                 <button className="w-full text-left">
-                                    <DropdownItem icon={Heart} label="Favorites" />
+                                    <DropdownItem icon={Heart} label="Favorites"
+                                        onClick={() => {
+                                            if (!isAuthorized) return setShowAuthGate(true);
+                                            navigate("/recipes?view=favorites");
+                                        }}
+                                    />
                                 </button>
                             </>
                         )}

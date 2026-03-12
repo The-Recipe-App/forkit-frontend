@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useMe } from "../hooks/useMe";
 import backendUrlV1 from "../urls/backendUrl";
 import { useContentLicense } from "../hooks/contentLicense/contentLicense";
+import { useContextManager } from "../features/ContextProvider";
+import RequireAuthGate from "../components/auth/RequireAuthGate";
 
 /* ═══════════════════════════════════════════════════════════
    CONSTANTS
@@ -834,7 +836,7 @@ export default function RecipeCreate() {
     const {
         plan,
     } = usr_data;
-    console.log(usr_data);
+    const { isAuthorized } = useContextManager();
     const USER_PLAN = plan; // ← swap from auth context; try FREE/PRO/ORG
 
     const { licenses = [] } = useContentLicense();
@@ -897,6 +899,15 @@ export default function RecipeCreate() {
     if (done) {
         return <SuccessScreen onReset={() => { setDone(false); setStage(0); setAnimKey(k => k + 1); setData({ ...BLANK }); }} />;
     }
+
+    if (!isAuthorized) {
+        return (
+            <div className="my-10">
+                <RequireAuthGate returnTo="/recipes" />
+            </div>
+        )
+    }
+
     return (
         <div className="fk-root min-h-screen flex flex-col">
             <div className="fk-glow" />

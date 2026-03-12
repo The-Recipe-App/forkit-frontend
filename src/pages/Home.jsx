@@ -108,7 +108,7 @@ export default function Home() {
               )}
 
               <button
-                onClick={() => navigate("/create")}
+                onClick={() => navigate("/recipes/create")}
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500 text-black font-medium hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ml-2"
                 aria-label="Create a new fork"
               >
